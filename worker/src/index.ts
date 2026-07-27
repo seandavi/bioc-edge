@@ -1,4 +1,4 @@
-import { candidates, cacheControl, cacheUrl, decodePath } from "./keys.ts";
+import { candidates, cacheControl, cacheUrl, contentType, decodePath } from "./keys.ts";
 
 interface Env {
   BUCKET: R2Bucket;
@@ -65,6 +65,9 @@ async function fromR2(
 
     const headers = new Headers();
     obj.writeHttpMetadata(headers);
+    // R2 returns no Content-Type at all when the object was stored without
+    // one, so derive it rather than letting the browser sniff.
+    if (!headers.get("content-type")) headers.set("content-type", contentType(key));
     headers.set("etag", obj.httpEtag);
     headers.set("accept-ranges", "bytes");
     headers.set("cache-control", cacheControl(headers.get("content-type")));

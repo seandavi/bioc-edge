@@ -1,7 +1,7 @@
 // node --test worker/test.ts
 import test from "node:test";
 import assert from "node:assert/strict";
-import { candidates, cacheControl, decodePath } from "./src/keys.ts";
+import { candidates, cacheControl, contentType, decodePath } from "./src/keys.ts";
 
 test("directory paths get index.html", () => {
   assert.deepEqual(candidates("/"), ["index.html"]);
@@ -19,7 +19,11 @@ test("paths with extensions are served as-is", () => {
 });
 
 test("extensionless paths try .html then /index.html", () => {
-  assert.deepEqual(candidates("/help/faq"), ["help/faq.html", "help/faq/index.html"]);
+  assert.deepEqual(candidates("/help/faq"), [
+    "help/faq.html",
+    "help/faq/index.html",
+    "help/faq",
+  ]);
 });
 
 test("a dot in a parent directory does not count as an extension", () => {
@@ -27,6 +31,7 @@ test("a dot in a parent directory does not count as an extension", () => {
   assert.deepEqual(candidates("/packages/3.24/bioc"), [
     "packages/3.24/bioc.html",
     "packages/3.24/bioc/index.html",
+    "packages/3.24/bioc",
   ]);
 });
 
@@ -45,4 +50,21 @@ test("browsers recheck often, the edge holds everything ~forever", () => {
     assert.match(cacheControl(t), /s-maxage=31536000/);
     assert.match(cacheControl(t), /immutable/);
   }
+});
+
+test("extensionless keys stay reachable (flattened redirects)", () => {
+  // wget saves a redirect body under the requested path, so /books/OSCA is
+  // stored as an extensionless HTML file and must still resolve.
+  assert.deepEqual(candidates("/books/OSCA"), [
+    "books/OSCA.html",
+    "books/OSCA/index.html",
+    "books/OSCA",
+  ]);
+});
+
+test("content type falls back rather than serving none", () => {
+  assert.match(contentType("style/base/colors.css"), /^text\/css/);
+  assert.equal(contentType("packages/x_1.0.tar.gz"), "application/gzip");
+  assert.match(contentType("books/OSCA"), /^text\/html/); // extensionless
+  assert.match(contentType("packages/3.24/bioc"), /^text\/html/); // dot is a dir
 });

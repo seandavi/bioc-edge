@@ -3,3 +3,4 @@ crawl-*.log
 node_modules/
 .wrangler/
 .env
+worker/dev.log

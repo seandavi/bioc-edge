@@ -96,6 +96,40 @@ duplicate of bioconductor.org, which would compete with the real site in results
 script overwrites it with `Disallow: /`. Remove that only if this mirror is ever promoted
 to production.
 
+## Redirects — unresolved
+
+`/books/OSCA`, `/books/SingleRBook` and friends are redirects. Production answers them
+with a **four-hop chain that twice bounces through plaintext `http://`**:
+
+```
+/books/SingleRBook          302 -> http://…/books/release/SingleRBook
+                            301 -> https://…/books/release/SingleRBook
+                            302 -> http://…/books/release/SingleRBook/
+                            301 -> https://…/books/release/SingleRBook/
+```
+
+Worth reporting upstream on its own — the http hops are a live downgrade on every one of
+these URLs.
+
+This breaks the crawl in two ways:
+
+1. wget saves the body under the **requested** path, not the final one, so the mirror
+   gets an extensionless `books/SingleRBook` file. `--trust-server-names` does not fix
+   it — it collapses the whole path to `index.html`.
+2. The canonical `/books/release/SingleRBook/` is never stored at all, because nothing in
+   the link graph points at it. Anyone following the real URL would 404 on the mirror.
+
+Two consequences already handled defensively in the Worker: `candidates()` falls back to
+the bare extensionless key, and `contentType()` supplies a type for objects stored
+without one. That second one matters more than it looks — `cacheControl()` keys off
+content type, so a missing type made HTML cache as `immutable` for a year.
+
+**Still to do:** capture the redirect map. `wget -S` logs the chains and survives
+`--no-verbose`, so a crawl pass can emit source → final-https-target pairs. Serve those
+as single-hop 301s from the Worker and seed the crawl with the targets so canonical paths
+are actually stored. Until then the mirror flattens redirects into 200s, which will fail
+the byte-identity diff gate.
+
 ## Sync
 
 `rclone sync ./mirror r2:bioc-site` on the same cadence the site rebuilds (hourly).
@@ -187,6 +221,29 @@ Analytics Engine — path, status, cache status, country, ASN, user-agent.
 
 This is the only thing forcing a Worker into the request path. If the bot question gets
 answered another way, the rewrite rules alone serve the site.
+
+## Credentials
+
+`./make-env.sh` pulls from Google Secret Manager (project `cdsci-infra`) into a
+gitignored `.env`. Nothing secret lives in this repo.
+
+The two existing Cloudflare tokens are exactly complementary, and **neither can deploy
+this Worker**:
+
+| | `cdsci-cloudflare-workers-token` | `cdsci-cloudflare-api-token` |
+|---|---|---|
+| Workers scripts | yes | no |
+| R2 | no | yes |
+| DNS | no | yes |
+| Workers routes | yes | no |
+
+A Worker with an R2 binding needs both at once — wrangler verifies the bucket before
+uploading the script. **Blocked until one token exists with:** Account → Workers Scripts
+(Edit), Account → Workers R2 Storage (Edit), Zone → Workers Routes (Edit), Zone → DNS
+(Edit, for the custom domain record), Zone → Cache Purge (Purge, for `sync.sh`).
+
+R2 bucket administration works today via rclone's S3 credentials, which is how
+`bioc-site` was created.
 
 ## Cost (Strides does not cover this)
 

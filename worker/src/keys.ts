@@ -14,8 +14,42 @@ export function candidates(pathname: string): string[] {
   const last = p.slice(p.lastIndexOf("/") + 1);
   if (last.includes(".")) return [p];
 
-  // Extensionless: /help/faq -> help/faq.html, then help/faq/index.html
-  return [p + ".html", p + "/index.html"];
+  // Extensionless: /help/faq -> help/faq.html, then help/faq/index.html,
+  // then the bare key. The bare form is last but necessary: wget saves a
+  // redirect's body under the *requested* path, so shortcuts like
+  // /books/OSCA land in the mirror as extensionless HTML files.
+  return [p + ".html", p + "/index.html", p];
+}
+
+const TYPES: Record<string, string> = {
+  html: "text/html; charset=utf-8",
+  css: "text/css; charset=utf-8",
+  js: "text/javascript; charset=utf-8",
+  json: "application/json",
+  svg: "image/svg+xml",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  ico: "image/x-icon",
+  pdf: "application/pdf",
+  txt: "text/plain; charset=utf-8",
+  xml: "application/xml",
+  gz: "application/gzip",
+  tgz: "application/gzip",
+  zip: "application/zip",
+  woff2: "font/woff2",
+};
+
+/**
+ * Fallback for objects stored without Content-Type. R2 returns no type at
+ * all in that case, so the browser sniffs or downloads. Extensionless keys
+ * default to HTML because that is what they are -- flattened redirects.
+ */
+export function contentType(key: string): string {
+  const last = key.slice(key.lastIndexOf("/") + 1);
+  const dot = last.lastIndexOf(".");
+  return TYPES[dot > 0 ? last.slice(dot + 1).toLowerCase() : ""] ?? "text/html; charset=utf-8";
 }
 
 /**
