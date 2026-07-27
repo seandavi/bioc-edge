@@ -64,6 +64,10 @@ common=(
   --wait="$WAIT" --random-wait --limit-rate="$RATE"
   --tries=3 --timeout=30 --waitretry=10
   --user-agent="$UA"
+  # -S logs response headers (and survives --no-verbose), which is how the
+  # redirect map gets built: /books/* answer with 4-hop chains that wget
+  # otherwise flattens into an extensionless file at the requested path.
+  -S
   --directory-prefix="$DEST"
   --no-verbose --append-output="$log"
 )

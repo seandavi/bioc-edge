@@ -222,6 +222,32 @@ Analytics Engine — path, status, cache status, country, ASN, user-agent.
 This is the only thing forcing a Worker into the request path. If the bot question gets
 answered another way, the rewrite rules alone serve the site.
 
+## Zone settings are silently undermining the cache
+
+Measured on the live prototype. CSS comes back with exactly the headers the Worker set,
+ETag included. HTML does not:
+
+| | Worker sets | Client receives |
+|---|---|---|
+| CSS | `max-age=86400, s-maxage=31536000, immutable` + ETag | identical |
+| HTML | `max-age=300, s-maxage=31536000` + ETag | `max-age=86400, s-maxage=31536000`, **no ETag** |
+
+Two separate problems, both zone-level and both invisible unless you look at headers:
+
+1. **Browser Cache TTL is overriding `max-age`** (300 → 86400). The whole freshness model
+   is short browser TTL plus purge-on-sync; a one-day browser TTL means a reader keeps
+   stale HTML for a day *after* a successful purge, because purging clears the edge, not
+   browsers. Set Browser Cache TTL to **Respect Existing Headers**.
+2. **ETag is stripped from HTML only**, so conditional requests cannot 304 and every
+   revalidation is a full transfer. HTML-only stripping points at a body-rewriting
+   feature — Email Address Obfuscation (on by default), Rocket Loader, or Auto Minify.
+   Cloudflare drops the origin ETag once it edits the body. Disable those for this
+   hostname.
+
+Neither existing token can read zone settings, so this needs the dashboard or a token
+with Zone Settings (Edit). **This applies equally to the production cutover** — the same
+two settings would quietly undo the caching strategy on `bioconductor.org`.
+
 ## Credentials
 
 `./make-env.sh` pulls from Google Secret Manager (project `cdsci-infra`) into a
