@@ -242,14 +242,27 @@ Two things remain, both isolated with a controlled probe: the same bytes uploade
 
 Identical bytes, same bucket, same request. So:
 
-1. **Something strips `ETag` from `text/html` responses.** It is content-type driven, not
-   caused by the Worker, the Cache API, or compression. This is what an HTML
-   post-processing feature does — Email Address Obfuscation or Rocket Loader — and it
-   strips the validator whenever the feature is *enabled*, whether or not it actually
-   rewrites that particular page. An earlier check here was misleading: served bytes were
-   byte-identical to R2, but that only means those pages had no email address to rewrite.
-   Without an ETag, no conditional request can ever 304, so every browser revalidation is
-   a full transfer.
+1. **Something strips `ETag` from `text/html` responses.** Content-type driven, not the
+   Worker, the Cache API, or compression. Email Address Obfuscation has since been turned
+   off and the ETag did *not* return, so it is not that. Remaining candidates: Rocket
+   Loader, Server-Side Excludes, Bot Fight Mode, and Web Analytics / Browser Insights
+   auto-injection — all of them process HTML.
+
+   This matters more than it first appears, because **the edge serves cached HTML without
+   invoking the Worker**. Verified with `wrangler tail`: a conditional GET for a cached
+   HTML object produced no Worker invocation at all. So the 304 decision belongs entirely
+   to Cloudflare's edge, and the edge can only make it with an ETag. No ETag means every
+   revalidation after `max-age` transfers the whole body, and no Worker-side fix can
+   change that.
+
+   The Worker now sets `Last-Modified` from `obj.uploaded` and honours conditional
+   requests on its own cache hits (`notModified()`). That covers the path where the
+   Worker *is* invoked, and CSS already 304s correctly via its ETag — but HTML needs the
+   zone setting found and disabled.
+
+   Corollary worth noting: an earlier cost estimate assumed the Worker runs on every
+   request including cache hits. It does not, so Workers-Paid usage will be lower than
+   quoted.
 
 2. ~~Browser Cache TTL overrides `max-age` on cache hits.~~ **Fixed.** Setting Browser
    Cache TTL to *Respect Existing Headers* restored the Worker's `max-age=300` on cached

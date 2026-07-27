@@ -1,4 +1,11 @@
-import { candidates, cacheControl, cacheUrl, contentType, decodePath } from "./keys.ts";
+import {
+  candidates,
+  cacheControl,
+  cacheUrl,
+  contentType,
+  decodePath,
+  notModified,
+} from "./keys.ts";
 import redirects from "./redirects.json";
 
 interface Env {
@@ -45,6 +52,10 @@ export default {
       for (const key of keys) {
         const hit = await cache.match(cacheUrl(url.origin, key));
         if (hit) {
+          if (notModified(req, hit)) {
+            log(env, ctx, req, 304, "HIT");
+            return new Response(null, { status: 304, headers: hit.headers });
+          }
           log(env, ctx, req, hit.status, "HIT");
           return req.method === "HEAD"
             ? new Response(null, { status: hit.status, headers: hit.headers })
@@ -81,6 +92,10 @@ async function fromR2(
     // one, so derive it rather than letting the browser sniff.
     if (!headers.get("content-type")) headers.set("content-type", contentType(key));
     headers.set("etag", obj.httpEtag);
+    // Second validator, because something in the zone strips ETag from
+    // text/html. Last-Modified survives, and onlyIf already forwards
+    // If-Modified-Since to R2, so conditional requests still 304.
+    headers.set("last-modified", obj.uploaded.toUTCString());
     headers.set("accept-ranges", "bytes");
     headers.set("cache-control", cacheControl(headers.get("content-type")));
 

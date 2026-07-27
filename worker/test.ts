@@ -1,7 +1,13 @@
 // node --test worker/test.ts
 import test from "node:test";
 import assert from "node:assert/strict";
-import { candidates, cacheControl, contentType, decodePath } from "./src/keys.ts";
+import {
+  candidates,
+  cacheControl,
+  contentType,
+  decodePath,
+  notModified,
+} from "./src/keys.ts";
 
 test("directory paths get index.html", () => {
   assert.deepEqual(candidates("/"), ["index.html"]);
@@ -67,4 +73,21 @@ test("content type falls back rather than serving none", () => {
   assert.equal(contentType("packages/x_1.0.tar.gz"), "application/gzip");
   assert.match(contentType("books/OSCA"), /^text\/html/); // extensionless
   assert.match(contentType("packages/3.24/bioc"), /^text\/html/); // dot is a dir
+});
+
+test("cache hits honour client validators", () => {
+  const res = (h: Record<string, string>) => new Response("x", { headers: h });
+  const req = (h: Record<string, string>) => new Request("https://x/", { headers: h });
+  const lm = "Mon, 27 Jul 2026 21:42:10 GMT";
+
+  assert.equal(notModified(req({ "if-none-match": '"abc"' }), res({ etag: '"abc"' })), true);
+  // Cloudflare weakens ETags when compressing; W/ must still match.
+  assert.equal(notModified(req({ "if-none-match": 'W/"abc"' }), res({ etag: '"abc"' })), true);
+  assert.equal(notModified(req({ "if-none-match": '"other"' }), res({ etag: '"abc"' })), false);
+  assert.equal(notModified(req({ "if-modified-since": lm }), res({ "last-modified": lm })), true);
+  assert.equal(
+    notModified(req({ "if-modified-since": "Mon, 27 Jul 2026 21:00:00 GMT" }), res({ "last-modified": lm })),
+    false,
+  );
+  assert.equal(notModified(req({}), res({ etag: '"abc"', "last-modified": lm })), false);
 });

@@ -88,3 +88,28 @@ export function cacheControl(contentType: string | null): string {
     ? "public, max-age=300, s-maxage=31536000"
     : "public, max-age=86400, s-maxage=31536000, immutable";
 }
+
+/**
+ * Does a cached response satisfy the client's validators?
+ *
+ * A cache hit returns a stored Response, so nothing revalidates it against
+ * the request -- without this every revalidation after max-age transfers the
+ * whole body again. Last-Modified carries this for HTML, whose ETag the zone
+ * strips before it reaches the client.
+ */
+export function notModified(req: Request, res: Response): boolean {
+  const strip = (t: string) => t.trim().replace(/^W\//, "");
+  const inm = req.headers.get("if-none-match");
+  const etag = res.headers.get("etag");
+  if (inm && etag) {
+    if (inm === "*" || inm.split(",").some((t) => strip(t) === strip(etag))) return true;
+  }
+  const ims = req.headers.get("if-modified-since");
+  const lm = res.headers.get("last-modified");
+  if (ims && lm) {
+    const a = Date.parse(lm);
+    const b = Date.parse(ims);
+    if (!Number.isNaN(a) && !Number.isNaN(b) && a <= b) return true;
+  }
+  return false;
+}
