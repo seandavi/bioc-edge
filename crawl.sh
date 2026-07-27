@@ -84,7 +84,13 @@ case "$phase" in
     # /stats/, /data/ and friends, so honoring it scopes this to the
     # non-package site for free. Archives are phase 3.
     targets=("$SITE/")
-    extra=(--reject-regex='(\?|\.(tar\.gz|tgz|tar\.bz2|zip)$)')
+    # Course materials are mostly lecture media: three .mp4 files alone are
+    # 711 MB, against 2 MB for every HTML page on the site. Crawling those
+    # over HTTP pulls gigabytes off the very box whose IOPS we are trying to
+    # protect, so they are excluded by default. MEDIA=1 to include them.
+    reject='(\?|\.(tar\.gz|tgz|tar\.bz2|zip)$)'
+    [[ ${MEDIA:-} == 1 ]] || reject='(\?|\.(tar\.gz|tgz|tar\.bz2|zip|mp4|m4v|mov|avi|mkv|webm|pptx?|docx?|xlsx?)$)'
+    extra=(--reject-regex="$reject")
     ;;
   refresh)
     # Discovery and refresh have to be separate passes. wget's -N cannot do

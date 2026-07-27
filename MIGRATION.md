@@ -30,6 +30,37 @@ on 2026-07-27:
 The weak CloudFront hit ratio is worth noting on its own: it is part of why master melts,
 and it is fixable today independent of this migration.
 
+## The outage driver is media, not pages
+
+Measured from the crawl, on reaching `/help/course-materials/`:
+
+| | Size | Files |
+|---|---|---|
+| `.mp4` | 711 MB | 3 |
+| `.pptx` | 138 MB | 1 |
+| `.pdf` | 21 MB | 3 |
+| **all HTML** | **2 MB** | 65 |
+
+Single files run to 308 MB, 269 MB, 129 MB. That is roughly 400:1 media to pages, from
+two years of course materials alone — and materials go back much further.
+
+This sharpens the diagnosis. "500k requests/day to course materials" reads like a page-view
+problem; it is actually crawlers pulling hundred-megabyte lecture videos off an EBS volume.
+That explains IOPS exhaustion far better than HTML serving does, and it makes the migration
+case stronger rather than weaker: large static media behind a CDN with free egress is
+exactly what R2 is for.
+
+It also splits phase 1 in two, because the halves have nothing in common:
+
+- **The site** — every HTML page, 2 MB. Crawls in minutes, syncs instantly, and is all
+  that is needed to demonstrate the architecture.
+- **The media** — many GB. Pulling it over HTTP means dragging it off the box we are
+  protecting, at crawl speed. It should move once, directly, ideally by rsync rather than
+  by crawl. `crawl.sh site` now excludes media by default; `MEDIA=1` opts in.
+
+**Do not run a media crawl against master to make a point.** The first 0.8 GB was pulled
+before this was noticed.
+
 ## Scope, in phases
 
 Phase 1 fixes the outage. Phase 3 is the large, risky one and is deliberately last.
