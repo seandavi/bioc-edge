@@ -232,11 +232,29 @@ section is the one most likely to be skipped and most costly to skip.
 
 Open question this prototype should answer: is the bot traffic legitimate, accidental, or
 malicious? Zone analytics gives volume and cache-hit ratio but not per-request detail;
-Logpush is Enterprise. Per-path/per-ASN attribution needs a Worker logging to Workers
-Analytics Engine — path, status, cache status, country, ASN, user-agent.
+Logpush is Enterprise. Per-request attribution needs the Worker logging to Workers
+Analytics Engine. Working now — `./query.sh` runs the canned queries.
 
-This is the only thing forcing a Worker into the request path. If the bot question gets
-answered another way, the rewrite rules alone serve the site.
+Fields logged: path, user-agent, country, ASN, cache status, and the client IP **/24**
+(or /48). The open question is about *ranges* of crawler traffic, not individuals, so the
+prefix answers it without retaining full addresses.
+
+Three things learned the hard way:
+
+- **Always weight by `sum(_sample_interval)`, never `count()`.** Analytics Engine samples,
+  and visibly so even at trivial volume — 338 raw rows represented 607 requests. At
+  500k/day a naive `count()` will be badly wrong.
+- **A dataset's schema is fixed at creation.** The original dataset was created with 5
+  blobs; adding a 6th silently dropped it — no error, just an empty column. Hence
+  `bioc_site_requests_v2`. **Adding a field means a new dataset name**, which is a trap
+  worth remembering when this gets extended.
+- Ingestion lags roughly a minute, so a query straight after a request returns nothing.
+
+Already visible in the data: sustained credential scanning against the prototype —
+`/.env`, `/.env.backup`, `/config/.env`, `/.git/HEAD` and around a dozen variants, mostly
+from AS202412 and AS210976, within hours of the hostname going live. Not the crawler
+traffic we set out to investigate, but a working demonstration that the instrumentation
+answers exactly this class of question.
 
 ## Zone settings and HTML validators — both resolved
 

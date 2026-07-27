@@ -9,7 +9,10 @@
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "bioc-site" }],
 
   // Answers "is the bot traffic legitimate?"; queryable via the AE SQL API.
-  "analytics_engine_datasets": [{ "binding": "LOGS", "dataset": "bioc_site_requests" }],
+  // _v2 because Analytics Engine fixes a dataset's schema at creation: the
+  // original was created with 5 blobs, so a 6th was silently dropped. Adding
+  // a field means a new dataset name.
+  "analytics_engine_datasets": [{ "binding": "LOGS", "dataset": "bioc_site_requests_v2" }],
 
   "vars": { "NOT_FOUND_KEY": "help/404.html" },
 

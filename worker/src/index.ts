@@ -141,6 +141,13 @@ async function notFound(env: Env): Promise<Response> {
 function log(env: Env, ctx: ExecutionContext, req: Request, status: number, cacheStatus: string) {
   if (!env.LOGS) return;
   const cf = req.cf as IncomingRequestCfProperties | undefined;
+  // The open question is "distributed crawler activity across similar IP
+  // ranges", which is a question about ranges, not individuals. Logging the
+  // /24 (or /48) answers it without retaining full addresses.
+  const ip = req.headers.get("cf-connecting-ip") ?? "";
+  const range = ip.includes(":")
+    ? ip.split(":").slice(0, 3).join(":") + "::/48"
+    : ip.split(".").slice(0, 3).join(".") + ".0/24";
   ctx.waitUntil(
     Promise.resolve(
       env.LOGS.writeDataPoint({
@@ -150,6 +157,7 @@ function log(env: Env, ctx: ExecutionContext, req: Request, status: number, cach
           cf?.country ?? "",
           String(cf?.asn ?? ""),
           cacheStatus,
+          range,
         ],
         doubles: [status],
         indexes: [String(cf?.asn ?? "")],
