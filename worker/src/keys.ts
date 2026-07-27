@@ -19,6 +19,18 @@ export function candidates(pathname: string): string[] {
 }
 
 /**
+ * Cache key for a resolved R2 key, rather than for the request URL.
+ *
+ * /help/, /help and /help/index.html all resolve to one object, so keying on
+ * the object gives them one shared cache entry instead of three. It also
+ * makes cache purging 1:1 with the keys rclone reports as changed -- keying
+ * on request URLs would mean guessing every URL form that maps to an object.
+ */
+export function cacheUrl(origin: string, key: string): string {
+  return `${origin}/${key}`;
+}
+
+/**
  * ponytail: R2 is a flat keyspace, so "a/../b" is a literal key that simply
  * misses rather than escaping anything. Decode only to reject malformed
  * percent-escapes early; no path normalization needed.

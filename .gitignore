@@ -2,3 +2,4 @@ mirror/
 crawl-*.log
 node_modules/
 .wrangler/
+.env

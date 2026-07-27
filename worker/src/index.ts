@@ -1,4 +1,4 @@
-import { candidates, cacheControl, decodePath } from "./keys.ts";
+import { candidates, cacheControl, cacheUrl, decodePath } from "./keys.ts";
 
 interface Env {
   BUCKET: R2Bucket;
@@ -24,26 +24,39 @@ export default {
     // cache to keep the 206 path simple.
     const ranged = req.headers.has("range");
     const cache = caches.default;
+    const keys = candidates(path);
+
+    // Entries are keyed by resolved object, not request URL, so at most a
+    // couple of local lookups -- and /help/, /help and /help/index.html all
+    // land on the same one.
     if (!ranged) {
-      const hit = await cache.match(req);
-      if (hit) {
-        log(env, ctx, req, hit.status, "HIT");
-        return hit;
+      for (const key of keys) {
+        const hit = await cache.match(cacheUrl(url.origin, key));
+        if (hit) {
+          log(env, ctx, req, hit.status, "HIT");
+          return req.method === "HEAD"
+            ? new Response(null, { status: hit.status, headers: hit.headers })
+            : hit;
+        }
       }
     }
 
-    const res = await fromR2(req, env, path);
+    const { res, key } = await fromR2(req, env, keys);
 
-    if (res.status === 200 && req.method === "GET" && !ranged) {
-      ctx.waitUntil(cache.put(req, res.clone()));
+    if (key && res.status === 200 && req.method === "GET" && !ranged) {
+      ctx.waitUntil(cache.put(cacheUrl(url.origin, key), res.clone()));
     }
     log(env, ctx, req, res.status, ranged ? "RANGE" : "MISS");
     return res;
   },
 };
 
-async function fromR2(req: Request, env: Env, path: string): Promise<Response> {
-  for (const key of candidates(path)) {
+async function fromR2(
+  req: Request,
+  env: Env,
+  keys: string[],
+): Promise<{ res: Response; key: string | null }> {
+  for (const key of keys) {
     const obj = await env.BUCKET.get(key, {
       onlyIf: req.headers,
       range: req.headers,
@@ -62,7 +75,7 @@ async function fromR2(req: Request, env: Env, path: string): Promise<Response> {
     if (!("body" in obj)) {
       const unchanged =
         req.headers.has("if-none-match") || req.headers.has("if-modified-since");
-      return new Response(null, { status: unchanged ? 304 : 412, headers });
+      return { res: new Response(null, { status: unchanged ? 304 : 412, headers }), key };
     }
 
     if (obj.range && req.headers.has("range")) {
@@ -70,13 +83,14 @@ async function fromR2(req: Request, env: Env, path: string): Promise<Response> {
       const offset = r.suffix !== undefined ? obj.size - r.suffix : r.offset ?? 0;
       const length = r.suffix !== undefined ? r.suffix : r.length ?? obj.size - offset;
       headers.set("content-range", `bytes ${offset}-${offset + length - 1}/${obj.size}`);
-      return new Response(obj.body, { status: 206, headers });
+      return { res: new Response(obj.body, { status: 206, headers }), key };
     }
 
-    return new Response(req.method === "HEAD" ? null : obj.body, { status: 200, headers });
+    const body = req.method === "HEAD" ? null : obj.body;
+    return { res: new Response(body, { status: 200, headers }), key };
   }
 
-  return notFound(env);
+  return { res: await notFound(env), key: null };
 }
 
 async function notFound(env: Env): Promise<Response> {
