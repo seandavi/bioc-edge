@@ -228,31 +228,39 @@ Analytics Engine — path, status, cache status, country, ASN, user-agent.
 This is the only thing forcing a Worker into the request path. If the bot question gets
 answered another way, the rewrite rules alone serve the site.
 
-## Zone settings are silently undermining the cache
+## ETag is missing on HTML — unexplained
 
-Measured on the live prototype. CSS comes back with exactly the headers the Worker set,
-ETag included. HTML does not:
+Measured on the live prototype, then re-measured after an earlier wrong diagnosis.
 
-| | Worker sets | Client receives |
-|---|---|---|
-| CSS | `max-age=86400, s-maxage=31536000, immutable` + ETag | identical |
-| HTML | `max-age=300, s-maxage=31536000` + ETag | `max-age=86400, s-maxage=31536000`, **no ETag** |
+What is **fine**, contrary to what this document said before:
 
-Two separate problems, both zone-level and both invisible unless you look at headers:
+- HTML is served with exactly the `Cache-Control` the Worker sets (`max-age=300,
+  s-maxage=31536000`). An earlier reading of `max-age=86400` came from entries cached
+  before the `contentType()` fix was deployed, not from a Browser Cache TTL override.
+- Served bytes are byte-identical to the R2 objects. Nothing is rewriting the body — no
+  Email Obfuscation injection, no minification.
 
-1. **Browser Cache TTL is overriding `max-age`** (300 → 86400). The whole freshness model
-   is short browser TTL plus purge-on-sync; a one-day browser TTL means a reader keeps
-   stale HTML for a day *after* a successful purge, because purging clears the edge, not
-   browsers. Set Browser Cache TTL to **Respect Existing Headers**.
-2. **ETag is stripped from HTML only**, so conditional requests cannot 304 and every
-   revalidation is a full transfer. HTML-only stripping points at a body-rewriting
-   feature — Email Address Obfuscation (on by default), Rocket Loader, or Auto Minify.
-   Cloudflare drops the origin ETag once it edits the body. Disable those for this
-   hostname.
+What is **still wrong**:
 
-Neither existing token can read zone settings, so this needs the dashboard or a token
-with Zone Settings (Edit). **This applies equally to the production cutover** — the same
-two settings would quietly undo the caching strategy on `bioconductor.org`.
+| | ETag (identity) | ETag (brotli) | `cf-cache-status` |
+|---|---|---|---|
+| CSS | `"1642c968…"` | `W/"1642c968…"` | HIT |
+| HTML | absent | absent | absent |
+
+The CSS behaviour is textbook: Cloudflare weakens a strong ETag when it compresses. HTML
+losing the validator entirely, while the body is untouched and `Cache-Control` survives,
+is not explained by compression. Without an ETag, conditional requests can never 304, so
+every browser revalidation is a full transfer — exactly the traffic pattern this
+migration exists to reduce.
+
+Worth noting the Worker does set it: `headers.set("etag", obj.httpEtag)`, and a local
+miniflare run returns the ETag on HTML. So it is being lost between the Worker and the
+client, on HTML only.
+
+Candidates to check in the dashboard, in rough order of likelihood — a Managed Transform
+or Response Header Transform Rule removing the header, then Cache Rules or Browser Cache
+TTL. **Do not change settings blind**: everything else measured correct, so an
+unnecessary change here risks breaking what already works.
 
 ## Credentials
 
