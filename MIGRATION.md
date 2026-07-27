@@ -25,7 +25,7 @@ on 2026-07-27:
 | `robots.txt` disallows `/packages/release/`, `/packages/devel/`, all `/packages/N.N/`, `/checkResults/`, `/biocViews/`, `/stats/`, `/data/`, `/repository/` | A robots-respecting crawl gets the non-package site only. Phase 2 needs `-e robots=off`, which is defensible for a first-party mirror but should be a stated decision. |
 | `/help/` is *not* disallowed | Explains the crawler concentration on course materials: it is the largest robots-allowed section. |
 | CloudFront returns `X-Cache: Miss` on the homepage and on `/help/course-materials/`; HTML is `Cache-Control: max-age=600` | CloudFront is not absorbing crawler load today. Our crawl reaches master, so it must be rate-limited and run off-peak. |
-| Origin sends `ETag` and `Last-Modified` on every response | Incremental re-crawls can use `wget -N` / conditional GETs — cheap after the first pass. |
+| Origin sends `ETag` and `Last-Modified` on every response | Conditional GETs work, but only in a non-recursive refresh pass — see Crawl. |
 
 The weak CloudFront hit ratio is worth noting on its own: it is part of why master melts,
 and it is fixable today independent of this migration.

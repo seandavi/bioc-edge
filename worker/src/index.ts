@@ -1,4 +1,5 @@
 import { candidates, cacheControl, cacheUrl, contentType, decodePath } from "./keys.ts";
+import redirects from "./redirects.json";
 
 interface Env {
   BUCKET: R2Bucket;
@@ -18,6 +19,17 @@ export default {
     const url = new URL(req.url);
     const path = decodePath(url.pathname);
     if (path === null) return new Response("Bad Request", { status: 400 });
+
+    // Production answers these with a four-hop chain that twice downgrades to
+    // plaintext http. One relative hop instead: same destination, no downgrade.
+    const target = (redirects as Record<string, string>)[path];
+    if (target) {
+      log(env, ctx, req, 301, "REDIRECT");
+      return new Response(null, {
+        status: 301,
+        headers: { location: target, "cache-control": "public, max-age=3600" },
+      });
+    }
 
     // Bindings bypass the edge HTTP cache entirely, so without this every
     // request is a billed Class B op against R2. Range requests skip the

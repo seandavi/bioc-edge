@@ -5,6 +5,7 @@
 #
 #   ./crawl.sh site        non-package site (phase 1), honors robots.txt
 #   ./crawl.sh packages    package landing pages + vignettes (phase 2)
+#   ./crawl.sh canonical   pass 2: store redirect targets at their real paths
 #   ./crawl.sh refresh     re-fetch known URLs conditionally (cheap, frequent)
 #   SPIDER=1 ./crawl.sh packages    count and size without filling disk
 #
@@ -27,6 +28,56 @@ UA=${UA:-"bioc-r2-migration/0.1 (+https://github.com/Bioconductor/bioc-cloudflar
 urls="$DEST.urls"
 
 phase=${1:-}
+
+# Pass 2. The link graph points at shortcuts (/packages/Foo), those redirect
+# to canonical pages (/packages/release/bioc/html/Foo.html), and wget saves
+# the body under the *requested* path -- so the canonical URL, which is what
+# everything links to and search engines index, is never stored.
+#
+# One log line carries both halves: the final URL, and a filename wget derived
+# from the requested path. Where they disagree, it was a redirect.
+#
+# ponytail: POC-grade. An rsync from staging makes this whole pass disappear.
+if [[ $phase == canonical ]]; then
+  src_log=${LOG:-crawl-site.log}
+  [[ -s $src_log ]] || { echo "no $src_log -- run ./crawl.sh site first" >&2; exit 1; }
+  map="$DEST.redirects.tsv"
+
+  awk -v dest="$DEST" '
+    /URL:/ {
+      u = substr($3, 5)
+      if (!match($0, /"[^"]*"/)) next
+      f = substr($0, RSTART + 1, RLENGTH - 2)
+      if (index(f, dest "/") != 1) next           # stale line from an older DEST
+      rel = substr(f, length(dest) + 2)
+      p = u; sub(/^https?:\/\/[^\/]+/, "", p)     # url path, scheme-agnostic
+      expect = (p ~ /\/$/) ? substr(p, 2) "index.html" : substr(p, 2)
+      if (rel == expect) next                     # saved where it was fetched
+      print "/" rel "\t" p
+    }' "$src_log" | sort -u > "$map"
+
+  echo "$(wc -l < "$map") redirects found"
+  [[ -s $map ]] || exit 0
+
+  # Baked into the Worker bundle rather than KV or an R2 lookup: ~200 entries
+  # is nothing in memory, and a redeploy per crawl is fine at POC scale.
+  jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}' < "$map" > worker/src/redirects.json
+  echo "wrote worker/src/redirects.json"
+
+  cut -f2 "$map" | sed "s|^|$SITE|" | sort -u > "$DEST.targets"
+  wget --no-host-directories --no-verbose -S --append-output="crawl-canonical.log" \
+       --wait="$WAIT" --random-wait --limit-rate="$RATE" \
+       --tries=3 --timeout=30 --waitretry=10 --user-agent="$UA" \
+       --directory-prefix="$DEST" -e robots=off --no-recursive \
+       --input-file="$DEST.targets" || [[ $? == 8 ]]
+
+  # The flattened copies are redundant now that the Worker 301s these paths,
+  # and removing them keeps the mirror URL-faithful.
+  (cd "$DEST" && cut -f1 "$map" | sed 's|^/||' | tr '\n' '\0' | xargs -0 rm -f)
+  echo "canonical pass done: $(find "$DEST" -type f | wc -l) objects"
+  exit 0
+fi
+
 case "$phase" in
   site)
     # robots.txt already disallows /packages/, /checkResults/, /biocViews/,
@@ -53,7 +104,7 @@ case "$phase" in
     extra=(-e robots=off --no-parent --reject-regex='(\?|/(src|bin)/)')
     ;;
   *)
-    echo "usage: $0 {site|packages|refresh}" >&2
+    echo "usage: $0 {site|packages|canonical|refresh}" >&2
     exit 2
     ;;
 esac
@@ -93,6 +144,7 @@ if [[ $phase != refresh && -d $DEST ]]; then
   echo "note: $DEST exists; discovery expects it empty (rm -rf it first)" >&2
 fi
 
+[[ $phase == refresh ]] || : > "$log"
 echo "crawling $phase -> $DEST (rate=$RATE wait=${WAIT}s), logging to $log"
 # wget exits 8 on any server-error response; a few 404s in the link graph
 # should not kill a multi-hour crawl.
