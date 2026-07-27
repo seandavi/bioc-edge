@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bioc-site",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-27",
+  "observability": { "enabled": true },
+
+  // Bucket stays private — reachable only through this Worker's binding.
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "bioc-site" }],
+
+  // Answers "is the bot traffic legitimate?"; queryable via the AE SQL API.
+  "analytics_engine_datasets": [{ "binding": "LOGS", "dataset": "bioc_site_requests" }],
+
+  "vars": { "NOT_FOUND_KEY": "help/404.html" },
+
+  "routes": [{ "pattern": "bioconductordev.org/*", "zone_name": "bioconductordev.org" }]
+}
