@@ -153,8 +153,9 @@ the byte-identity diff gate.
   the main sync, so rclone then treats them as current and never overwrites the type.
   Note the Worker's `contentType()` fallback does not save you here — it only fires when
   the type is *missing*, not when it is wrong.
-- **Cache purge permission is required, not optional.** The token lacks Zone → Cache
-  Purge, and the consequence is already visible: `/packages/plyranges` was cached as
+- **Cache purge permission is required, not optional.** Now granted and verified: a
+  purge corrected `/packages/plyranges` from `octet-stream` to `text/html`. Before it was
+  granted the consequence was visible: `/packages/plyranges` was cached as
   `octet-stream` before the fix and still serves that, while never-requested pages like
   `/packages/DESeq2` serve `text/html` correctly. With `s-maxage=31536000` a wrong cached
   entry persists for a year unless purged.
@@ -272,6 +273,17 @@ Identical bytes, same bucket, same request. So:
    Corollary worth noting: an earlier cost estimate assumed the Worker runs on every
    request including cache hits. It does not, so Workers-Paid usage will be lower than
    quoted.
+
+   Narrowed further via the rulesets API: the zone has **no
+   `http_response_headers_transform` ruleset at all**, so no custom transform rule is
+   removing the header. The only zone-level ruleset is one `http_request_cache_settings`
+   entry; everything else is Cloudflare-managed. That leaves a feature toggle (Rocket
+   Loader, Server-Side Excludes, Bot Fight Mode, Web Analytics injection) — or plain
+   Cloudflare behaviour for `text/html`, which may not be fully disableable on this plan.
+
+   **Impact is bounded.** Now that Browser Cache TTL is fixed, this costs one full
+   transfer per repeat visitor per HTML page per 5 minutes. It is an efficiency issue,
+   not a correctness one, and does not block the POC.
 
 2. ~~Browser Cache TTL overrides `max-age` on cache hits.~~ **Fixed.** Setting Browser
    Cache TTL to *Respect Existing Headers* restored the Worker's `max-age=300` on cached
