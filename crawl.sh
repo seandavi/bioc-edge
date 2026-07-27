@@ -5,6 +5,7 @@
 #
 #   ./crawl.sh site        non-package site (phase 1), honors robots.txt
 #   ./crawl.sh packages    package landing pages + vignettes (phase 2)
+#   ./crawl.sh refresh     re-fetch known URLs conditionally (cheap, frequent)
 #   SPIDER=1 ./crawl.sh packages    count and size without filling disk
 #
 # SPIDER still transfers every page -- wget has to read the HTML to follow
@@ -23,6 +24,7 @@ WAIT=${WAIT:-0.5}
 # Identifies the crawl in master's access logs so it can be told apart from
 # the bot traffic we are investigating, and excluded from those counts.
 UA=${UA:-"bioc-r2-migration/0.1 (+https://github.com/Bioconductor/bioc-cloudflare)"}
+urls="$DEST.urls"
 
 phase=${1:-}
 case "$phase" in
@@ -33,6 +35,16 @@ case "$phase" in
     targets=("$SITE/")
     extra=(--reject-regex='(\?|\.(tar\.gz|tgz|tar\.bz2|zip)$)')
     ;;
+  refresh)
+    # Discovery and refresh have to be separate passes. wget's -N cannot do
+    # both: on a 304 it has no body to extract links from, so a recursive
+    # re-crawl dies at the first unchanged page and silently walks nothing.
+    # So: recurse without -N to discover (infrequent), then re-fetch the
+    # discovered URL list with -N and no recursion (frequent, conditional).
+    [[ -s $urls ]] || { echo "no $urls -- run ./crawl.sh site first" >&2; exit 1; }
+    targets=()
+    extra=(-N --no-recursive --input-file="$urls" -e robots=off)
+    ;;
   packages)
     # robots.txt disallows the entire package section. This is our own site
     # and we need the landing pages, so override -- but stay out of
@@ -41,7 +53,7 @@ case "$phase" in
     extra=(-e robots=off --no-parent --reject-regex='(\?|/(src|bin)/)')
     ;;
   *)
-    echo "usage: $0 {site|packages}" >&2
+    echo "usage: $0 {site|packages|refresh}" >&2
     exit 2
     ;;
 esac
@@ -54,7 +66,8 @@ log="crawl-$phase.log"
 # Deliberately NOT used: --convert-links and --adjust-extension. Both rewrite
 # paths, and R2 keys have to match live URLs byte for byte.
 common=(
-  --mirror
+  # NOT --mirror: it implies -N, which kills recursion on the first 304.
+  --recursive --level=inf
   --no-host-directories
   --page-requisites
   # Belt-and-braces: without --span-hosts wget already refuses to leave the
@@ -74,6 +87,12 @@ common=(
 
 [[ ${SPIDER:-} == 1 ]] && common+=(--spider)
 
+# Discovery re-fetches everything, and wget suffixes rather than overwrites
+# an existing file, so a discovery crawl needs a clean destination.
+if [[ $phase != refresh && -d $DEST ]]; then
+  echo "note: $DEST exists; discovery expects it empty (rm -rf it first)" >&2
+fi
+
 echo "crawling $phase -> $DEST (rate=$RATE wait=${WAIT}s), logging to $log"
 # wget exits 8 on any server-error response; a few 404s in the link graph
 # should not kill a multi-hour crawl.
@@ -90,5 +109,12 @@ fi
 # invite indexing of a duplicate of the entire site. Deny everything instead.
 # Drop this line if this mirror is ever promoted to production.
 printf 'User-agent: *\nDisallow: /\n' > "$DEST/robots.txt"
+
+# The URL list is what `refresh` re-fetches; discovery is the only way to
+# learn about new pages, so it has to run on its own schedule.
+if [[ $phase != refresh ]]; then
+  sed -n 's/.*URL:\([^ ]*\).*/\1/p' "$log" | sort -u > "$urls"
+  echo "$(wc -l < "$urls") urls recorded in $urls"
+fi
 
 printf '%s objects, %s\n' "$(find "$DEST" -type f | wc -l)" "$(du -sh "$DEST" | cut -f1)"

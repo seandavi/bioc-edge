@@ -80,8 +80,14 @@ read the HTML to follow links. It saves disk, not load on master.
 - `--wait` / `--limit-rate` are not politeness theatre — the crawl hits master. Start
   conservative, run off-peak, watch CloudWatch EBS metrics during the first pass. `RATE`
   and `WAIT` are the knobs.
-- `--mirror` implies `--timestamping`, so re-crawls issue conditional requests against
-  `Last-Modified` and incremental passes are cheap.
+- **Discovery and refresh are separate passes, and must be.** `--mirror` implies `-N`,
+  and on a 304 wget has no body to extract links from, so a recursive re-crawl dies at
+  the first unchanged page. Measured: a resumed crawl made exactly one request, took a
+  304 on the root, and walked nothing — silently. Discovery therefore recurses *without*
+  `-N` (and needs a clean destination, since wget suffixes rather than overwrites);
+  `./crawl.sh refresh` re-fetches the recorded URL list with `-N` and no recursion.
+- Only discovery finds new pages, so it has to run on its own schedule — a refresh-only
+  cadence would never notice a page that did not exist at the last discovery.
 - The crawl sends a distinctive user agent, so it is attributable in master's access logs
   and can be excluded when counting bot traffic.
 - Phase 2 adds `-e robots=off`, seeds from `/packages/release/bioc/`, and rejects `/src/`
