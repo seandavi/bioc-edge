@@ -228,39 +228,40 @@ Analytics Engine — path, status, cache status, country, ASN, user-agent.
 This is the only thing forcing a Worker into the request path. If the bot question gets
 answered another way, the rewrite rules alone serve the site.
 
-## ETag is missing on HTML — unexplained
+## Two zone settings still degrade HTML
 
-Measured on the live prototype, then re-measured after an earlier wrong diagnosis.
+The rule that was disabling caching is gone — HTML now returns `cf-cache-status: HIT`.
+Two things remain, both isolated with a controlled probe: the same bytes uploaded to
+`etag-probe.html`, `.css` and `.txt`, then fetched.
 
-What is **fine**, contrary to what this document said before:
+| Key | ETag returned |
+|---|---|
+| `etag-probe.css` | `"5609a31e…"` |
+| `etag-probe.txt` | `"5609a31e…"` |
+| `etag-probe.html` | **absent** |
 
-- HTML is served with exactly the `Cache-Control` the Worker sets (`max-age=300,
-  s-maxage=31536000`). An earlier reading of `max-age=86400` came from entries cached
-  before the `contentType()` fix was deployed, not from a Browser Cache TTL override.
-- Served bytes are byte-identical to the R2 objects. Nothing is rewriting the body — no
-  Email Obfuscation injection, no minification.
+Identical bytes, same bucket, same request. So:
 
-What is **still wrong**:
+1. **Something strips `ETag` from `text/html` responses.** It is content-type driven, not
+   caused by the Worker, the Cache API, or compression. This is what an HTML
+   post-processing feature does — Email Address Obfuscation or Rocket Loader — and it
+   strips the validator whenever the feature is *enabled*, whether or not it actually
+   rewrites that particular page. An earlier check here was misleading: served bytes were
+   byte-identical to R2, but that only means those pages had no email address to rewrite.
+   Without an ETag, no conditional request can ever 304, so every browser revalidation is
+   a full transfer.
 
-| | ETag (identity) | ETag (brotli) | `cf-cache-status` |
-|---|---|---|---|
-| CSS | `"1642c968…"` | `W/"1642c968…"` | HIT |
-| HTML | absent | absent | absent |
+2. **Browser Cache TTL overrides `max-age` on cache hits.** A fresh HTML response carries
+   the Worker's `max-age=300`; the same URL once cached returns `max-age=86400`. CSS is
+   unaffected only because its own value is already 86400. Freshness here comes from
+   purge-on-sync, and purging clears the edge but not browsers — so a one-day browser TTL
+   means readers hold stale HTML for a day after a successful purge.
 
-The CSS behaviour is textbook: Cloudflare weakens a strong ETag when it compresses. HTML
-losing the validator entirely, while the body is untouched and `Cache-Control` survives,
-is not explained by compression. Without an ETag, conditional requests can never 304, so
-every browser revalidation is a full transfer — exactly the traffic pattern this
-migration exists to reduce.
+Fixes, on `cancerdatasci.org` and again at production cutover:
 
-Worth noting the Worker does set it: `headers.set("etag", obj.httpEtag)`, and a local
-miniflare run returns the ETag on HTML. So it is being lost between the Worker and the
-client, on HTML only.
-
-Candidates to check in the dashboard, in rough order of likelihood — a Managed Transform
-or Response Header Transform Rule removing the header, then Cache Rules or Browser Cache
-TTL. **Do not change settings blind**: everything else measured correct, so an
-unnecessary change here risks breaking what already works.
+- Scrape Shield → **Email Address Obfuscation: off**; Speed → Optimization → **Rocket
+  Loader: off**. Re-run the probe; the ETag should return on `.html`.
+- Caching → Configuration → **Browser Cache TTL: Respect Existing Headers**.
 
 ## Credentials
 
