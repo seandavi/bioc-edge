@@ -78,15 +78,21 @@ export function decodePath(pathname: string): string | null {
 }
 
 /**
- * Content only changes when rclone syncs, so the edge (`s-maxage`) holds
- * everything effectively forever and freshness comes from an explicit purge
- * of the changed URLs after each sync. Browser TTL (`max-age`) stays short so
- * clients pick that purge up without their own stale copy in the way.
+ * Only version-stamped archives are safe to mark `immutable`.
+ *
+ * This site's CSS and JS carry no content hash (`style/base/colors.css`, not
+ * `colors.a1b2c3.css`), so `immutable` would hide a fix from returning
+ * visitors for the whole browser TTL -- and purging clears the edge, never
+ * browsers. Package archives are version-stamped in the filename, so they
+ * genuinely never change.
+ *
+ * The edge holds everything for a year regardless; freshness comes from
+ * purge-on-sync, so the browser TTL stays short for anything mutable.
  */
-export function cacheControl(contentType: string | null): string {
-  return contentType?.startsWith("text/html")
-    ? "public, max-age=300, s-maxage=31536000"
-    : "public, max-age=86400, s-maxage=31536000, immutable";
+export function cacheControl(key: string): string {
+  return /\.(tar\.gz|tgz|tar\.bz2|zip)$/.test(key)
+    ? "public, max-age=31536000, s-maxage=31536000, immutable"
+    : "public, max-age=300, s-maxage=31536000";
 }
 
 /**

@@ -46,16 +46,18 @@ test("malformed percent-escapes are rejected, valid ones decoded", () => {
   assert.equal(decodePath("/help/a%20b.html"), "/help/a b.html");
 });
 
-test("browsers recheck often, the edge holds everything ~forever", () => {
-  const html = cacheControl("text/html; charset=utf-8");
-  assert.match(html, /max-age=300/);
-  assert.match(html, /s-maxage=31536000/);
-
-  // Edge TTL is uniform; freshness comes from purge-on-sync, not expiry.
-  for (const t of ["application/gzip", null]) {
-    assert.match(cacheControl(t), /s-maxage=31536000/);
-    assert.match(cacheControl(t), /immutable/);
+test("immutable only for version-stamped archives", () => {
+  // Unhashed asset names: a fix must not be hidden from returning visitors,
+  // and purge cannot reach browsers.
+  for (const k of ["style/base/colors.css", "js/bioconductor.js", "help/index.html"]) {
+    assert.match(cacheControl(k), /max-age=300/);
+    assert.doesNotMatch(cacheControl(k), /immutable/);
   }
+  // Version is in the filename, so these really never change.
+  assert.match(cacheControl("packages/DESeq2_1.44.0.tar.gz"), /immutable/);
+  assert.match(cacheControl("packages/x_1.0.tgz"), /immutable/);
+  // Edge TTL is uniform; freshness comes from purge-on-sync.
+  for (const k of ["a/b.css", "a/b.tar.gz"]) assert.match(cacheControl(k), /s-maxage=31536000/);
 });
 
 test("extensionless keys stay reachable (flattened redirects)", () => {

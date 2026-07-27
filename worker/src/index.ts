@@ -101,7 +101,7 @@ async function fromR2(
     // If-Modified-Since to R2, so conditional requests still 304.
     headers.set("last-modified", obj.uploaded.toUTCString());
     headers.set("accept-ranges", "bytes");
-    headers.set("cache-control", cacheControl(headers.get("content-type")));
+    headers.set("cache-control", cacheControl(key));
 
     // No body means a precondition failed. If-None-Match/If-Modified-Since
     // failing means "unchanged" (304); If-Match/If-Unmodified-Since failing
