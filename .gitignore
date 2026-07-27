@@ -5,3 +5,4 @@ node_modules/
 .env
 worker/dev.log
 worker/tail.json
+sync-*.log
