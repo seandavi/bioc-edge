@@ -13,5 +13,5 @@
 
   "vars": { "NOT_FOUND_KEY": "help/404.html" },
 
-  "routes": [{ "pattern": "bioconductordev.org/*", "zone_name": "bioconductordev.org" }]
+  "routes": [{ "pattern": "bioc-dev.cancerdatasci.org/*", "zone_name": "cancerdatasci.org" }]
 }

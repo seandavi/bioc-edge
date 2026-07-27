@@ -1,6 +1,6 @@
 # Bioconductor.org → Cloudflare R2 migration plan
 
-Status: prototype plan. Target for the prototype is `bioconductordev.org`; production
+Status: prototype plan. Target for the prototype is `bioc-dev.cancerdatasci.org`; production
 cutover to `bioconductor.org` is a later decision.
 
 ## Why
@@ -51,8 +51,23 @@ R2 key = URL path with the leading `/` stripped. No prefix, no transformation.
 ```
 
 `wget` already writes `/help/` as `help/index.html`, so the on-disk mirror maps to keys
-one-to-one and rclone stays a plain sync. One bucket per phase (`bioc-site`,
-`bioc-packages`) so they sync, cache, and roll back independently.
+one-to-one and rclone stays a plain sync.
+
+**One bucket, `bioc-site`.** Keys already mirror URL paths, which are unique across the
+whole site, so splitting phases into separate buckets fights that design for nothing:
+phases are just key prefixes (`help/…`, `packages/…`). `rclone sync` scoped to a prefix
+already syncs and rolls back a phase independently, and purge is by URL either way. One
+bucket means one binding and no prefix routing in the Worker.
+
+Named for content rather than environment on purpose. R2 buckets cannot be renamed, so a
+`-dev` suffix would turn promotion into a full copy of the site instead of a Worker route
+change. Environment lives in DNS and the route.
+
+Note the account already has a `bioconductor` bucket — 11k objects, 67 GB of build
+reports and checkResults, unrelated to this work. Do not sync into it.
+
+Phase 3, if it happens, is the one case for a second bucket: 188 GB with different
+lifecycle needs (Infrequent Access for superseded versions) than the live site.
 
 ## Crawl
 
@@ -204,7 +219,7 @@ host serves them and need no handling. Hand-written body content is the exceptio
 `http://` (which 301s to https). Course materials are contributed, so assume more of
 this throughout that section.
 
-Consequence: on `bioconductordev.org` those few links walk the visitor back to
+Consequence: on `bioc-dev.cancerdatasci.org` those few links walk the visitor back to
 production. The prototype is not fully self-contained. For the production cutover they
 are already correct and need nothing.
 
@@ -257,8 +272,8 @@ same bytes twice under two paths.
 ## Cutover
 
 1. Survey crawl of phase 1. Record object count and total bytes.
-2. Sync to R2, serve on `bioconductordev.org`, no production traffic.
-3. Diff a crawl of `bioconductordev.org` against `bioconductor.org` — status codes and
+2. Sync to R2, serve on `bioc-dev.cancerdatasci.org`, no production traffic.
+3. Diff a crawl of `bioc-dev.cancerdatasci.org` against `bioconductor.org` — status codes and
    content hashes for every URL. Zero unexplained diffs is the gate. (No sitemap, so the
    URL list comes from the phase 1 crawl itself.)
 4. Load-test and measure cache hit ratio under the course-materials access pattern.
