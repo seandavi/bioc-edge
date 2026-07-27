@@ -196,12 +196,63 @@ Workers Paid at $5/month plus $0.30/million beyond 10M.
 Expect single-digit to low-tens of dollars per month. **Confirm against a measured object
 count and total size from the phase 1 survey crawl before quoting a number to anyone.**
 
+## Absolute URLs
+
+Site chrome and navigation are root-relative (`href="/..."`), so they follow whatever
+host serves them and need no handling. Hand-written body content is the exception:
+`/help/course-materials/` carries 7 absolute `bioconductor.org` links, one of them
+`http://` (which 301s to https). Course materials are contributed, so assume more of
+this throughout that section.
+
+Consequence: on `bioconductordev.org` those few links walk the visitor back to
+production. The prototype is not fully self-contained. For the production cutover they
+are already correct and need nothing.
+
+**Do not fix this with `--convert-links`.** It rewrites the HTML bytes, so the mirror
+stops matching production and the byte-identity diff in the cutover gate becomes
+useless. If the prototype ever needs to be genuinely self-contained, rewrite at request
+time with `HTMLRewriter` in the Worker, conditional on the prototype hostname — the
+stored objects stay byte-identical and the rewrite disappears at cutover. Until then,
+normalize the hostname when diffing rather than changing any content.
+
+Note `www.bioconductor.org` serves 200 directly rather than redirecting to the apex, so
+the site answers on two hostnames. wget does not follow cross-host links without
+`--span-hosts`, so the crawl stays on the apex on its own; `--domains` in `crawl.sh` is
+belt-and-braces only.
+
 ## Mirrors
 
-Official rsync mirrors currently pull from master, bypassing CloudFront and adding
-backend load. Once phases 1 and 2 are validated, ask mirrors to sync from R2 instead. R2
-speaks S3, so mirrors switch to `rclone`/`aws s3 sync` rather than `rsync` — a change on
-the operators' side needing lead time and a written runbook.
+The [mirror instructions](https://www.bioconductor.org/about/mirrors/mirror-how-to/)
+change the picture here — the meeting's "redirect mirrors to sync from R2" is downstream
+of phase 3, not phases 1 and 2.
+
+What mirrors actually do:
+
+```
+rsync -e "ssh" -zrtlv --delete bioc-rsync@master.bioconductor.org:release /dest/packages/release
+```
+
+- They pull the **package repository over SSH**, not the website over HTTP. Phase 1 and 2
+  content is not what mirrors serve, so validating those phases does not unblock anything
+  for mirrors.
+- 188 GB for BioC 3.24. This is squarely phase 3.
+- Recommended cadence is once or twice a month for release, at most weekly for devel. So
+  mirror load on master is periodic bursts, not sustained — worth tempering the meeting's
+  claim that mirrors are a significant contributor. Nothing enforces the cadence, though,
+  so a misconfigured mirror could sync far more often; check the access logs before
+  ruling it in or out.
+- **R2 speaks S3, not rsync/SSH.** Repointing mirrors means every operator switches to
+  `rclone` or `aws s3 sync` and needs credentials, since our bucket is private behind the
+  Worker. That is a coordinated change across independent operators — long lead time, a
+  written runbook, and a decision about scoped read-only R2 tokens.
+
+**`release` and `devel` are symlinks** to version directories (`3.24`, etc.), which
+operators re-point every 6 months at release. Object storage has no symlinks. On R2 that
+means either storing 188 GB twice under both prefixes, or resolving `packages/release/`
+→ `packages/3.24/` as a prefix rewrite in the Worker. The rewrite is obviously right and
+cheap, but it has to be designed into phase 3 rather than discovered during it. It also
+means an HTTP crawl of both `/packages/release/` and `/packages/3.24/` would fetch the
+same bytes twice under two paths.
 
 ## Cutover
 

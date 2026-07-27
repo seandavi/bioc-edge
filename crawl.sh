@@ -57,6 +57,9 @@ common=(
   --mirror
   --no-host-directories
   --page-requisites
+  # Belt-and-braces: without --span-hosts wget already refuses to leave the
+  # start host, which is what keeps the crawl off www.bioconductor.org (a
+  # distinct host serving 200, not a redirect to the apex).
   --domains=bioconductor.org
   --wait="$WAIT" --random-wait --limit-rate="$RATE"
   --tries=3 --timeout=30 --waitretry=10
