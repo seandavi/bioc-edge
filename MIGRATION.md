@@ -56,21 +56,30 @@ one-to-one and rclone stays a plain sync. One bucket per phase (`bioc-site`,
 
 ## Crawl
 
-```
-wget --mirror --no-host-directories --page-requisites \
-     --wait=0.5 --random-wait --limit-rate=2m \
-     --timestamping --no-parent \
-     -P ./mirror https://bioconductor.org/help/
-```
+`./crawl.sh site` (phase 1) and `./crawl.sh packages` (phase 2). `SPIDER=1` counts and
+sizes without filling disk — but note it still transfers every page, since wget has to
+read the HTML to follow links. It saves disk, not load on master.
 
 - **No `--convert-links` and no `--adjust-extension`.** Both rewrite paths; we need keys
   identical to the live URLs.
 - `--wait` / `--limit-rate` are not politeness theatre — the crawl hits master. Start
-  conservative, run off-peak, watch CloudWatch EBS metrics during the first pass.
-- `--timestamping` makes re-crawls conditional against `Last-Modified`, so incremental
-  passes are cheap.
-- Phase 2 adds `-e robots=off` and seeds from `/packages/release/bioc/`.
+  conservative, run off-peak, watch CloudWatch EBS metrics during the first pass. `RATE`
+  and `WAIT` are the knobs.
+- `--mirror` implies `--timestamping`, so re-crawls issue conditional requests against
+  `Last-Modified` and incremental passes are cheap.
+- The crawl sends a distinctive user agent, so it is attributable in master's access logs
+  and can be excluded when counting bot traffic.
+- Phase 2 adds `-e robots=off`, seeds from `/packages/release/bioc/`, and rejects `/src/`
+  and `/bin/` to stay out of the phase 3 repo.
+- URLs with query strings are rejected — wget would write them as literal `?` filenames,
+  which make poor keys.
 - The first run is a survey: count objects and total bytes before sizing anything else.
+
+**The mirror must not be indexed.** wget copies production's `robots.txt` into the
+mirror; served from the prototype host that invites search engines to index a full
+duplicate of bioconductor.org, which would compete with the real site in results. The
+script overwrites it with `Disallow: /`. Remove that only if this mirror is ever promoted
+to production.
 
 ## Sync
 
