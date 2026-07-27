@@ -92,6 +92,10 @@ async function fromR2(
     // one, so derive it rather than letting the browser sniff.
     if (!headers.get("content-type")) headers.set("content-type", contentType(key));
     headers.set("etag", obj.httpEtag);
+    // Same value under a non-standard name. If this survives on text/html
+    // while `etag` does not, the header is being removed downstream rather
+    // than never set -- which is the whole question.
+    headers.set("x-r2-etag", obj.httpEtag);
     // Second validator, because something in the zone strips ETag from
     // text/html. Last-Modified survives, and onlyIf already forwards
     // If-Modified-Since to R2, so conditional requests still 304.

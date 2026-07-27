@@ -238,7 +238,7 @@ Analytics Engine — path, status, cache status, country, ASN, user-agent.
 This is the only thing forcing a Worker into the request path. If the bot question gets
 answered another way, the rewrite rules alone serve the site.
 
-## Zone settings: one fixed, one outstanding
+## Zone settings and HTML validators — both resolved
 
 The rule that was disabling caching is gone — HTML now returns `cf-cache-status: HIT`.
 Two things remain, both isolated with a controlled probe: the same bytes uploaded to
@@ -252,38 +252,39 @@ Two things remain, both isolated with a controlled probe: the same bytes uploade
 
 Identical bytes, same bucket, same request. So:
 
-1. **Something strips `ETag` from `text/html` responses.** Content-type driven, not the
-   Worker, the Cache API, or compression. Email Address Obfuscation has since been turned
-   off and the ETag did *not* return, so it is not that. Remaining candidates: Rocket
-   Loader, Server-Side Excludes, Bot Fight Mode, and Web Analytics / Browser Insights
-   auto-injection — all of them process HTML.
+1. **Cloudflare strips `ETag` from `text/html` — confirmed, and worked around.**
 
-   This matters more than it first appears, because **the edge serves cached HTML without
-   invoking the Worker**. Verified with `wrangler tail`: a conditional GET for a cached
-   HTML object produced no Worker invocation at all. So the 304 decision belongs entirely
-   to Cloudflare's edge, and the edge can only make it with an ETag. No ETag means every
-   revalidation after `max-age` transfers the whole body, and no Worker-side fix can
-   change that.
+   Proven by mirroring the same value into a non-standard header. On a fresh,
+   never-cached request:
 
-   The Worker now sets `Last-Modified` from `obj.uploaded` and honours conditional
-   requests on its own cache hits (`notModified()`). That covers the path where the
-   Worker *is* invoked, and CSS already 304s correctly via its ETag — but HTML needs the
-   zone setting found and disabled.
+   | Key | `etag` | `x-r2-etag` |
+   |---|---|---|
+   | `diag2.html` | absent | `"2f06d0ad…"` |
+   | `diag2.css` | `"2f06d0ad…"` | `"2f06d0ad…"` |
 
-   Corollary worth noting: an earlier cost estimate assumed the Worker runs on every
-   request including cache hits. It does not, so Workers-Paid usage will be lower than
-   quoted.
+   Same bytes, same code path. The Worker sets the value correctly — the mirror header
+   carries it — and Cloudflare removes the standard header on `text/html` only. Not the
+   Worker, not the Cache API, not compression, not a transform rule (the zone has no
+   `http_response_headers_transform` ruleset), and not Email Obfuscation or Rocket Loader,
+   both of which were off. Treat it as platform behaviour.
 
-   Narrowed further via the rulesets API: the zone has **no
-   `http_response_headers_transform` ruleset at all**, so no custom transform rule is
-   removing the header. The only zone-level ruleset is one `http_request_cache_settings`
-   entry; everything else is Cloudflare-managed. That leaves a feature toggle (Rocket
-   Loader, Server-Side Excludes, Bot Fight Mode, Web Analytics injection) — or plain
-   Cloudflare behaviour for `text/html`, which may not be fully disableable on this plan.
+   **The workaround makes it moot.** The Worker sets `Last-Modified` from `obj.uploaded`,
+   which Cloudflare does *not* strip, and the edge honours `If-Modified-Since` against it.
+   Verified after a purge:
 
-   **Impact is bounded.** Now that Browser Cache TTL is fixed, this costs one full
-   transfer per repeat visitor per HTML page per 5 minutes. It is an efficiency issue,
-   not a correctness one, and does not block the POC.
+   ```
+   /install/               conditional -> 304 (0 bytes)
+   /packages/DESeq2        conditional -> 304 (0 bytes)
+   /style/base/colors.css  conditional -> 304 (0 bytes)
+   ```
+
+   Revalidation is cheap again on HTML and assets alike. `x-r2-etag` is kept deliberately:
+   it costs one line and it is how anyone re-verifies this, including at production
+   cutover where the same behaviour will appear.
+
+   Note this only works on entries cached *after* the Worker began sending
+   `Last-Modified`. An earlier test showed 200 because the cached copy predated it — purge
+   after deploying a header change, or the old copies keep answering.
 
 2. ~~Browser Cache TTL overrides `max-age` on cache hits.~~ **Fixed.** Setting Browser
    Cache TTL to *Respect Existing Headers* restored the Worker's `max-age=300` on cached
