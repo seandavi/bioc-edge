@@ -146,9 +146,18 @@ the byte-identity diff gate.
 - `--dry-run` for the initial load and any layout change.
 - Use `copy` for the first runs, confirm object counts match, then switch to `sync`
   (which deletes destination objects absent from the source).
-- rclone sets `Content-Type` from the file extension. Verify `.html`, `.css`, `.js`,
-  `.svg`, `.tar.gz`, `.tgz`, `.zip` before the first public sync — a wrong type here
-  serves the whole site as `application/octet-stream`.
+- rclone sets `Content-Type` from the file extension, so the 362 extensionless keys
+  (flattened redirects — package landing pages, mostly) upload as
+  `application/octet-stream` and download instead of rendering. Confirmed live on
+  `/packages/plyranges`. `sync.sh` uploads those with an explicit `text/html` **before**
+  the main sync, so rclone then treats them as current and never overwrites the type.
+  Note the Worker's `contentType()` fallback does not save you here — it only fires when
+  the type is *missing*, not when it is wrong.
+- **Cache purge permission is required, not optional.** The token lacks Zone → Cache
+  Purge, and the consequence is already visible: `/packages/plyranges` was cached as
+  `octet-stream` before the fix and still serves that, while never-requested pages like
+  `/packages/DESeq2` serve `text/html` correctly. With `s-maxage=31536000` a wrong cached
+  entry persists for a year unless purged.
 
 ## Serving
 

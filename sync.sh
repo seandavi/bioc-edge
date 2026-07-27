@@ -25,6 +25,23 @@ PURGE_MAX=${PURGE_MAX:-300}
 
 log=sync-$(date +%Y%m%dT%H%M%S).log
 
+# rclone derives Content-Type from the file extension, so extensionless keys
+# would upload as application/octet-stream and download rather than render.
+# They exist because wget saves a redirect's body under the requested path,
+# so they are HTML. This runs *before* the sync below: rclone then sees them
+# as already current and will not re-upload them with a guessed type.
+if [[ -z ${DRY_RUN:-} ]]; then
+  extless=$(mktemp)
+  (cd "$DEST" && find . -type f ! -name '*.*' -printf '%P\n') > "$extless"
+  if [[ -s $extless ]]; then
+    rclone copy "$DEST" "r2:$BUCKET" --files-from "$extless" \
+      --header-upload "Content-Type: text/html; charset=utf-8" \
+      --log-level INFO --log-file "$log"
+    echo "$(wc -l < "$extless") extensionless objects typed as text/html"
+  fi
+  rm -f "$extless"
+fi
+
 # Deliberately `sync`, not `copy`: the mirror is authoritative and deletions
 # have to propagate. Run DRY_RUN=1 first on any layout change.
 rclone sync "$DEST" "r2:$BUCKET" \
