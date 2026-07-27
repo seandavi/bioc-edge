@@ -228,7 +228,7 @@ Analytics Engine — path, status, cache status, country, ASN, user-agent.
 This is the only thing forcing a Worker into the request path. If the bot question gets
 answered another way, the rewrite rules alone serve the site.
 
-## Two zone settings still degrade HTML
+## Zone settings: one fixed, one outstanding
 
 The rule that was disabling caching is gone — HTML now returns `cf-cache-status: HIT`.
 Two things remain, both isolated with a controlled probe: the same bytes uploaded to
@@ -251,17 +251,16 @@ Identical bytes, same bucket, same request. So:
    Without an ETag, no conditional request can ever 304, so every browser revalidation is
    a full transfer.
 
-2. **Browser Cache TTL overrides `max-age` on cache hits.** A fresh HTML response carries
-   the Worker's `max-age=300`; the same URL once cached returns `max-age=86400`. CSS is
-   unaffected only because its own value is already 86400. Freshness here comes from
-   purge-on-sync, and purging clears the edge but not browsers — so a one-day browser TTL
-   means readers hold stale HTML for a day after a successful purge.
+2. ~~Browser Cache TTL overrides `max-age` on cache hits.~~ **Fixed.** Setting Browser
+   Cache TTL to *Respect Existing Headers* restored the Worker's `max-age=300` on cached
+   HTML. The override was applied at serve time rather than at store time, so entries
+   cached before the change picked it up without a purge.
 
 Fixes, on `cancerdatasci.org` and again at production cutover:
 
 - Scrape Shield → **Email Address Obfuscation: off**; Speed → Optimization → **Rocket
-  Loader: off**. Re-run the probe; the ETag should return on `.html`.
-- Caching → Configuration → **Browser Cache TTL: Respect Existing Headers**.
+  Loader: off**. Still outstanding. Re-run the probe; the ETag should return on `.html`.
+- ~~Caching → Configuration → Browser Cache TTL: Respect Existing Headers.~~ Done, verified.
 
 ## Credentials
 
