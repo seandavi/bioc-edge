@@ -106,8 +106,8 @@ if [[ -n ${RSYNC_SRC:-} ]]; then
   #
   # Deletions of directories carry a trailing slash; object storage has no
   # directories, so drop them.
-  cand=$(mktemp) gone=$(mktemp) links=$(mktemp)
-  trap 'rm -f "$cand" "$gone" "$links"' EXIT
+  cand=$(mktemp) gone=$(mktemp) links=$(mktemp) extless=$(mktemp)
+  trap 'rm -f "$cand" "$gone" "$links" "$extless"' EXIT
   awk -F'|' '$1 ~ /^>f/         {print $2}' "$log" > "$cand"
   awk -F'|' '$1 ~ /^\*deleting/ && $2 !~ /\/$/ {print $2}' "$log" > "$gone"
 
@@ -123,9 +123,29 @@ if [[ -n ${RSYNC_SRC:-} ]]; then
   # Symlinks are not passed (`>f` excludes rsync's `cL`), and rclone would skip
   # them anyway without --links. That is intended: R2 has no symlinks and the
   # Worker resolves them. Regenerate the map with `find $DEST -type l`.
+  # Extensionless keys again, but the opposite answer from the crawl path.
+  # rclone types by extension, so these would upload as octet-stream and
+  # download rather than render -- and the Worker's contentType() fallback
+  # cannot save them, because it only fires when the type is *missing*, not
+  # when it is wrong.
+  #
+  # The crawl path types them text/html because there they are flattened
+  # redirects. Here they are real files and none of them are HTML: 35,743 in
+  # the filtered tree, overwhelmingly NEWS (27,065), LICENSE (7,122), README,
+  # plus the repository indexes R itself reads -- VIEWS, PACKAGES, DESCRIPTION.
+  # text/plain is the honest answer for all of them.
+  #
+  # Uploaded first for the same reason as the crawl path: the --checksum copy
+  # below then sees them as current and will not overwrite the type.
+  awk -F/ '$NF !~ /\./' "$cand" > "$extless"
+
   rlog=$log.rclone
   : > "$rlog"
   if [[ -z ${DRY_RUN:-} ]]; then
+    [[ -s $extless ]] && rclone copy "$DEST" "r2:$BUCKET" --files-from "$extless" \
+      --no-traverse --checksum --transfers 16 \
+      --header-upload "Content-Type: text/plain; charset=utf-8" \
+      --log-level INFO --log-file "$rlog"
     [[ -s $cand ]] && rclone copy "$DEST" "r2:$BUCKET" --files-from "$cand" \
       --no-traverse --checksum --transfers 16 --log-level INFO --log-file "$rlog"
     [[ -s $gone ]] && rclone delete "r2:$BUCKET" --files-from "$gone"

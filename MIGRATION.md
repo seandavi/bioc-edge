@@ -374,6 +374,29 @@ RECONCILE=1 ./sync.sh      # rclone check --checksum, reports missing and differ
 
 Weekly is the intent. It is the expensive full comparison — just not the hourly one.
 
+### The first load is not a delta
+
+The delta path computes what changed *since the last pull*. On an empty or stale bucket
+there is no such baseline, and — more importantly — it can only ever add and update. It
+learns about deletions from rsync's `*deleting` lines, which describe changes to the
+local mirror, not objects already sitting in R2 that no longer correspond to anything.
+
+The bucket currently holds 507 objects from the phase-1 wget crawl. Some share keys with
+the docroot and get overwritten; the rest are orphans. `packages/plyranges` is the clear
+case: wget saved a redirect body under the requested path, so it exists as an
+extensionless object, while the real docroot has no such file. Left in place it would
+keep serving crawl-era content indefinitely.
+
+So the initial load is a plain `rclone sync`, which the delta-path reasoning does not
+argue against. The HEAD-per-object problem is about comparing millions of *existing*
+destination objects; against a near-empty bucket the destination listing is 507 entries
+and the comparison is free. It also deletes the orphans, which is the point.
+
+```sh
+rclone sync ./mirror r2:bioc-site --checksum --transfers 16   # once, after the first pull
+RSYNC_SRC=$RSYNC_SRC ./sync.sh                     # every run after that
+```
+
 **Not yet settled:** whether the hourly pull should walk the whole docroot at all. rsync
 still stats 3.7M local files per run to build the delta, which is cheap per file but not
 free. If that proves too slow, the split is by cadence — `packages/` hourly,

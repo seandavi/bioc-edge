@@ -106,4 +106,26 @@ want=$(printf '%s\n' \
   packages/3.23/bioc/html/DESeq2.html | sort)
 [[ $want == "$got" ]] || { echo "FAIL scope filter"; diff <(echo "$want") <(echo "$got"); exit 1; }
 
+# 8. Extensionless split. rclone types by extension, so these need an explicit
+#    Content-Type or they upload as octet-stream and download rather than
+#    render -- and the Worker cannot repair it, because contentType() only
+#    fires when the type is missing, not when it is wrong. 35,743 of them in
+#    the real tree, so getting the predicate wrong is not a rounding error.
+#    This is the same awk sync.sh uses.
+ext_split() { awk -F/ '$NF !~ /\./'; }
+got=$(printf '%s\n' \
+  packages/3.23/bioc/news/DESeq2/NEWS \
+  packages/3.23/bioc/src/contrib/PACKAGES \
+  packages/3.23/bioc/VIEWS \
+  help/index.html \
+  packages/3.23/bioc/src/contrib/DESeq2_1.44.0.tar.gz \
+  style/base/colors.css \
+  some.dir/README | ext_split | sort)
+want=$(printf '%s\n' \
+  packages/3.23/bioc/news/DESeq2/NEWS \
+  packages/3.23/bioc/src/contrib/PACKAGES \
+  packages/3.23/bioc/VIEWS \
+  some.dir/README | sort)
+[[ $want == "$got" ]] || { echo "FAIL extensionless split"; diff <(echo "$want") <(echo "$got"); exit 1; }
+
 echo "ok"
