@@ -99,7 +99,104 @@ export function candidates(pathname: string, links: Links = {}): string[] {
 
   // ponytail: resolved only. The unresolved key is never also worth trying --
   // if a path resolves, the original was a symlink and was never uploaded.
-  return [...new Set(out.map((k) => resolveLinks(k, links)))];
+  const resolved = out.map((k) => resolveLinks(k, links));
+  const archived = resolved
+    .map((k) => archiveFallback(k, links))
+    .filter((k): k is string => k !== null);
+  return [...new Set([...resolved, ...archived])];
+}
+
+/**
+ * OSN archive fallback for pre-3.23 package trees.
+ *
+ * .htaccess 302-redirected `/packages/<old-version>/...` to an external OSN
+ * bucket (inventory/htaccess-20260730.conf:65-83). That bucket is being
+ * migrated into this one, not redirected to (MIGRATION.md, "The OSN archive
+ * moves too") -- so the port is a key fallback, not a redirect. rclone
+ * preserves the OSN bucket's own path layout when it lands here, so the R2
+ * key is just the request path with `archive.bioconductor.org/` prepended
+ * -- the same relative structure the OSN redirects already used, minus the
+ * bucket name.
+ *
+ * Gated on version, not on subpath: the .htaccess rules enumerate specific
+ * subpaths (bioc/src/contrib, data/annotation/{src,bin}, workflows/*, ...)
+ * because they were added incrementally over years, but the OSN mirror is
+ * the whole `packages/<version>/` tree for those releases. Trying the
+ * archive key for every subpath under an old version is simpler and no
+ * less correct: candidates() only reaches this after the ordinary docroot
+ * candidate already missed, so a wrong guess costs one extra R2 op on a
+ * genuine 404 and nothing on a hit.
+ *
+ * "3.23"/"3.24" are hardcoded the same way rsync-filter hardcodes them for
+ * checkResults/ -- the pair moves together at the next release, and this
+ * is the same one-line edit either way.
+ */
+/**
+ * Prefix the OSN archive lands under in R2. Contingent on the transfer in the
+ * "migrate the OSN archive" issue, which has not run -- until it does, this
+ * fallback costs one extra R2 lookup on a request that was going to 404
+ * anyway, and returns nothing. Mirrors the source layout
+ * (`<bucket>/archive.bioconductor.org/packages/...`) so the copy is a
+ * straight prefix map rather than a rename.
+ */
+const ARCHIVE_PREFIX = "archive.bioconductor.org";
+
+/**
+ * Source tarballs for releases 1.8-3.22 live in the archive, not the docroot;
+ * upstream .htaccess 302s out to OSN for them. Since the archive is being
+ * migrated into R2 rather than redirected to, that becomes a key mapping: try
+ * the archive prefix as a last-resort candidate.
+ *
+ * Which versions count as "current" comes from the symlink map, not a
+ * constant. `packages/release` and `packages/devel` are entries in
+ * _symlinks.json precisely so a release roll is data, not a deploy -- and
+ * hardcoding the pair here would reintroduce exactly the coupling that map
+ * exists to remove, then misroute every request for the newly-current release
+ * until someone shipped a code change.
+ *
+ * With no map we cannot tell current from archived, so we add no candidate at
+ * all. A wrong archive key is a silently wrong 200 if that object exists;
+ * a missing one is only a 404 we were already going to serve.
+ */
+export function archiveFallback(key: string, links: Links = {}): string | null {
+  const m = key.match(/^packages\/(\d+\.\d+)\//);
+  if (!m) return null;
+  const current = new Set(
+    ["packages/release", "packages/devel"]
+      .map((k) => links[k])
+      .filter((v): v is string => typeof v === "string"),
+  );
+  if (current.size === 0 || current.has(m[1])) return null;
+  return `${ARCHIVE_PREFIX}/${key}`;
+}
+
+/** Shape of worker/src/redirects.json -- see worker/gen-redirects.ts. */
+export interface Redirects {
+  exact: Record<string, string>;
+  prefix: { from: string; to: string; keepSuffix: boolean }[];
+}
+
+/**
+ * Path -> redirect target, or null to fall through to R2.
+ *
+ * `exact` first because it is O(1) and the common case (an old bookmark for
+ * one specific URL). Among `prefix` entries, the longest `from` wins -- a
+ * specific rule ("/overview/coredevs") over a catch-all it is also a prefix
+ * of ("/overview") -- the same result Apache's first-matching-RewriteRule-
+ * wins produced, since `[R]` ends rule processing at the first match. Found
+ * by scanning rather than trusting array order: the generator emits `prefix`
+ * longest-first for a readable diff, but correctness shouldn't depend on a
+ * second file keeping that sort intact.
+ */
+export function redirectFor(path: string, redirects: Redirects): string | null {
+  const exact = redirects.exact[path];
+  if (exact) return exact;
+  let best: Redirects["prefix"][number] | null = null;
+  for (const rule of redirects.prefix) {
+    if (path.startsWith(rule.from) && (!best || rule.from.length > best.from.length)) best = rule;
+  }
+  if (!best) return null;
+  return best.keepSuffix ? best.to + path.slice(best.from.length) : best.to;
 }
 
 const TYPES: Record<string, string> = {
@@ -158,6 +255,24 @@ export function decodePath(pathname: string): string | null {
   }
 }
 
+// .htaccess <FilesMatch> Cache-Control overrides (inventory/htaccess-
+// 20260730.conf:18-44) for files the build regenerates faster than the
+// default browser TTL would reveal -- PACKAGES/VIEWS drive `install.
+// packages()`, gitlog.xml and config.yaml are build metadata. Checked
+// against the basename only, first match wins, same as contentType().
+// Not ported: the blanket `ExpiresByType text/html A600` -- this repo
+// already decided HTML's browser TTL deliberately (5 min, MIGRATION.md
+// §Cache), and that decision predates and overrides this port.
+const SHORT_LIVED: [(name: string) => boolean, number][] = [
+  [(n) => ["PACKAGES", "PACKAGES.gz", "PACKAGES.rds", "VIEWS"].includes(n), 30],
+  [(n) => n === "BiocInstaller.dcf", 60],
+  [(n) => n === "config.yaml", 30],
+  [(n) => n.endsWith("gitlog.xml"), 30],
+  [(n) => n.endsWith(".rss"), 300],
+  [(n) => n.endsWith(".svg"), 30],
+  [(n) => n.endsWith(".csv"), 30],
+];
+
 /**
  * Only version-stamped archives are safe to mark `immutable`.
  *
@@ -168,12 +283,17 @@ export function decodePath(pathname: string): string | null {
  * genuinely never change.
  *
  * The edge holds everything for a year regardless; freshness comes from
- * purge-on-sync, so the browser TTL stays short for anything mutable.
+ * purge-on-sync, so the browser TTL stays short for anything mutable --
+ * SHORT_LIVED narrows that further for files that regenerate faster than
+ * the 5 min default (PACKAGES on every build, not just every sync).
  */
 export function cacheControl(key: string): string {
-  return /\.(tar\.gz|tgz|tar\.bz2|zip)$/.test(key)
-    ? "public, max-age=31536000, s-maxage=31536000, immutable"
-    : "public, max-age=300, s-maxage=31536000";
+  if (/\.(tar\.gz|tgz|tar\.bz2|zip)$/.test(key)) {
+    return "public, max-age=31536000, s-maxage=31536000, immutable";
+  }
+  const name = key.slice(key.lastIndexOf("/") + 1);
+  const short = SHORT_LIVED.find(([test]) => test(name));
+  return `public, max-age=${short ? short[1] : 300}, s-maxage=31536000`;
 }
 
 /**

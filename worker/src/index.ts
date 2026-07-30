@@ -5,8 +5,10 @@ import {
   contentType,
   decodePath,
   notModified,
+  redirectFor,
   LINKS_KEY,
   type Links,
+  type Redirects,
 } from "./keys.ts";
 import redirects from "./redirects.json";
 
@@ -55,9 +57,11 @@ export default {
     const path = decodePath(url.pathname);
     if (path === null) return new Response("Bad Request", { status: 400 });
 
-    // Production answers these with a four-hop chain that twice downgrades to
-    // plaintext http. One relative hop instead: same destination, no downgrade.
-    const target = (redirects as Record<string, string>)[path];
+    // Production answers many of these with a multi-hop chain that downgrades
+    // to plaintext http along the way (MIGRATION.md, "Redirects"). One hop
+    // instead: same destination, no downgrade. worker/gen-redirects.ts is
+    // what produced redirects.json from inventory/htaccess-20260730.conf.
+    const target = redirectFor(path, redirects as Redirects);
     if (target) {
       log(env, ctx, req, 301, "REDIRECT");
       return new Response(null, {

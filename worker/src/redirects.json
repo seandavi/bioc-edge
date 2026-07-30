@@ -1,1 +1,617 @@
-{}
+{
+  "exact": {
+    "/developers/how-to/git-mirror/": "/about/mirrors/mirror-how-to.html",
+    "/BioC2016/": "https://bioconductor.org/help/course-materials/2016/BioC2016/",
+    "/BioC2017/": "https://bioconductor.org/help/course-materials/2017/BioC2017/",
+    "/Docs/Papers/2003/Chiaretti": "/help/publications/2003/Chiaretti/chiaretti2/",
+    "/docs/workflows/index.html": "/help/workflows/",
+    "/docs/workflows": "/help/workflows/",
+    "/docs/workflows/": "/help/workflows/",
+    "/mailList.html": "/help/mailing-list/",
+    "/docs/mailList.html": "/help/mailing-list/",
+    "/docs/vignettes.html": "/help/package-vignettes/",
+    "/docs/postingGuide.html": "/help/mailing-list/posting-guide/",
+    "/docs/gettingHelp.html": "/help/",
+    "/docs/index.html": "/help/",
+    "/docs": "/help/",
+    "/docs/": "/help/",
+    "/pub/MiMB": "/help/publications/book-chapters/MiMB",
+    "/pub/biocases/BioconductorCaseStudiesSmall": "/help/publications/books/bioconductor-case-studies/case-studies-small.jpg",
+    "/pub/biocases/BiocCaseStudies": "/help/publications/books/bioconductor-case-studies/case-studies.jpg",
+    "/pub/biocases/BiocCaseStudiesLarge": "/help/publications/books/bioconductor-case-studies/case-studies-large.jpg",
+    "/pub/RBioinf/RProgrammingForBioinformatics": "/help/publications/books/r-programming-for-bioinformatics/rbioinf.jpg",
+    "/pub/RBioinf/RProgrammingforBioinformaticsSmall": "/help/publications/books/r-programming-for-bioinformatics/rbioinf-small.jpg",
+    "/bioconductor_book.jpg": "/help/publications/books/bioinformatics-and-computational-biology-solutions/bioconductor_book.jpg",
+    "/docs/mogr/bc1view": "/help/publications/books/bioinformatics-and-computational-biology-solutions/bc1view.jpg",
+    "/docs/mogr/bcbook": "/help/publications/books/bioinformatics-and-computational-biology-solutions/bcbook.jpg",
+    "/docs/techreports/TR1/relProjTR.pdf": "/help/publications/tech-reports/relProjTR.pdf",
+    "/docs/techreports/TR2/currProgTR.pdf": "/help/publications/tech-reports/currProgTR.pdf",
+    "/download/mirrors/mirror-howto.html": "/about/mirrors/mirror-how-to/",
+    "/overview/acks.html": "/about/",
+    "/docs/fairUse.html": "/help/course-materials/",
+    "/bioc1.7release": "/help/",
+    "/copy_of_index_html": "/",
+    "/index_html": "/",
+    "/index_html_old": "/",
+    "/main.html": "/",
+    "/BioC2015/": "https://bioconductor.org/help/course-materials/2015/BioC2015/",
+    "/developers/how-to/git.html": "https://contributions.bioconductor.org/git-version-control.html"
+  },
+  "prefix": [
+    {
+      "from": "/developers/how-to/git/bug-fix-in-release-and-devel",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#bug-fix-in-release-and-devel",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/sync-existing-repositories",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#sync-existing-repositories",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/resolve-duplicate-commits",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#resolve-duplicate-commits",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/create-local-repository",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#create-local-repository",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/troubleshoot-build-report",
+      "to": "https://contributions.bioconductor.org/troubleshooting-build-report.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/pull-upstream-changes",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#pull-upstream-changes",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/maintain-github-bioc",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#maintain-github-bioc",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/new-package-workflow",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#new-package-workflow",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/commonMethodsAndClasses",
+      "to": "https://contributions.bioconductor.org/important-bioconductor-package-development-features.html#reusebioc",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/push-to-github-bioc",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#push-to-github-bioc",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/unitTesting-guidelines",
+      "to": "https://contributions.bioconductor.org/tests.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/maintain-bioc-only",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#maintain-bioc-only",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/add-collaborators",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#add-collaborators-and-leverage-github-features",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/change-maintainer",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#change-maintainer",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/remove-large-data",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#remove-large-data-files-and-clean-git-tree",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/resolve-conflicts",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#resolve-merge-conflicts",
+      "keepSuffix": false
+    },
+    {
+      "from": "/packages/3.10/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.10/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.11/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.11/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.12/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.12/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.13/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.13/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.14/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.14/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.15/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.15/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.16/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.16/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.17/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.17/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.18/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.18/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.19/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.19/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.20/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.20/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.21/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.21/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.22/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.22/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.23/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.23/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.24/container-binaries/src/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.24/container-binaries/bioconductor_docker/src/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/developers/how-to/git/abandon-changes",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#abandon-changes",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/version-numbering",
+      "to": "https://contributions.bioconductor.org/versionnum.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/packages/3.10/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.10/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.11/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.11/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.12/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.12/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.13/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.13/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.14/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.14/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.15/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.15/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.16/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.16/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.17/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.17/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.18/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.18/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.19/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.19/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.20/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.20/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.21/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.21/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.22/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.22/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.23/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.23/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/packages/3.24/container-binaries/",
+      "to": "https://storage.googleapis.com/bioconductor-packages/3.24/container-binaries/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/docs/workflows/accessingAnnotData",
+      "to": "/help/workflows/annotation-data",
+      "keepSuffix": true
+    },
+    {
+      "from": "/developers/how-to/mavericks-howto",
+      "to": "https://contributions.bioconductor.org/cmavericks-best-practices.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/pub/docs/BioconductorCaseStudies",
+      "to": "/help/publications/books/bioconductor-case-studies/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/unitTesting-guideline",
+      "to": "https://contributions.bioconductor.org/tests.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/efficient-code",
+      "to": "https://contributions.bioconductor.org/r-code.html#robust-and-efficient-r-code",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/package-end-of-life/",
+      "to": "https://contributions.bioconductor.org/package-end-of-life-policy.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/source-contro",
+      "to": "https://contributions.bioconductor.org/git-version-control.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/docs/workflows/htmlpsequencing",
+      "to": "/help/workflows/high-throughput-sequencing",
+      "keepSuffix": true
+    },
+    {
+      "from": "/developers/how-to/coding-style",
+      "to": "https://contributions.bioconductor.org/r-code.html#r-code",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/package-submission",
+      "to": "https://contributions.bioconductor.org/submission-overview.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/package-guidelines",
+      "to": "https://contributions.bioconductor.org/develop-overview.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/c-debugging",
+      "to": "https://contributions.bioconductor.org/debugging-cc-code.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/deprecation",
+      "to": "https://contributions.bioconductor.org/deprecation.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git-mirrors",
+      "to": "/about/mirrors/mirror-how-to.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/docs/workflows/flowcytometry",
+      "to": "/help/workflows/high-throughput-assays",
+      "keepSuffix": true
+    },
+    {
+      "from": "/developers/how-to/long-tests",
+      "to": "https://contributions.bioconductor.org/long-tests.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/docs/workflows/flowoverview",
+      "to": "/help/workflows/high-throughput-assays/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/version-numberin",
+      "to": "https://contributions.bioconductor.org/versionnum.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/biocViews",
+      "to": "https://contributions.bioconductor.org/important-bioconductor-package-development-features.html#biocviews",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/web-query",
+      "to": "https://contributions.bioconductor.org/querying-web-resources.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/workflows",
+      "to": "https://contributions.bioconductor.org/non-software.html#workflow-packages",
+      "keepSuffix": false
+    },
+    {
+      "from": "/docs/workflows/oligoarrays",
+      "to": "/help/workflows/oligo-arrays",
+      "keepSuffix": true
+    },
+    {
+      "from": "/developers/how-to/useDevel",
+      "to": "https://contributions.bioconductor.org/use-devel.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/how-to/git/faq",
+      "to": "https://contributions.bioconductor.org/git-version-control.html#faq",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/source-contro",
+      "to": "https://contributions.bioconductor.org/git-version-control.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/BiocCheck.htm",
+      "to": "/packages/devel/bioc/vignettes/BiocCheck/inst/doc/BiocCheck.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/overview/advisoryboard",
+      "to": "/about/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/coding-styl",
+      "to": "https://contributions.bioconductor.org/r-code.html#r-code",
+      "keepSuffix": false
+    },
+    {
+      "from": "/about/advisory-board/",
+      "to": "/about/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/deprecatio",
+      "to": "https://contributions.bioconductor.org/deprecation.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/developers/c-debuggin",
+      "to": "https://contributions.bioconductor.org/debugging-cc-code.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/overview/screenshots",
+      "to": "/help/publications/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/pub/biocases/websupp",
+      "to": "/help/publications/books/bioconductor-case-studies/web-supplement",
+      "keepSuffix": true
+    },
+    {
+      "from": "/pub/RBioinf/websupp",
+      "to": "/help/publications/books/r-programming-for-bioinformatics/web-supplement",
+      "keepSuffix": true
+    },
+    {
+      "from": "/docs/mogr/mogrtest",
+      "to": "/help/publications/books/bioinformatics-and-computational-biology-solutions/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/docs/annualreports",
+      "to": "/about/annual-reports",
+      "keepSuffix": true
+    },
+    {
+      "from": "/developers/useDeve",
+      "to": "https://contributions.bioconductor.org/use-devel.html",
+      "keepSuffix": false
+    },
+    {
+      "from": "/pub/workingpapers",
+      "to": "/help/publications/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/overview/coredevs",
+      "to": "/about/core-team/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/help/bioc-views/",
+      "to": "/packages/",
+      "keepSuffix": true
+    },
+    {
+      "from": "/docs/techreports",
+      "to": "/help/publications/tech-reports",
+      "keepSuffix": true
+    },
+    {
+      "from": "/download/mirrors",
+      "to": "/about/mirrors",
+      "keepSuffix": true
+    },
+    {
+      "from": "/overview/related",
+      "to": "/about/related-projects/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/help/mailing-lis",
+      "to": "/help/support",
+      "keepSuffix": false
+    },
+    {
+      "from": "/GettingStarted",
+      "to": "/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/PackageSlides",
+      "to": "/help/publications/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/docs/bioclogo",
+      "to": "/images/logo_bioconductor.gif",
+      "keepSuffix": false
+    },
+    {
+      "from": "/docs/pslides",
+      "to": "/help/publications/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/pub/biocases",
+      "to": "/help/publications/books/bioconductor-case-studies",
+      "keepSuffix": true
+    },
+    {
+      "from": "/docs/install",
+      "to": "/install/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/docs/papers",
+      "to": "/help/publications/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/pub/RBioinf",
+      "to": "/help/publications/books/r-programming-for-bioinformatics",
+      "keepSuffix": true
+    },
+    {
+      "from": "/docs/mogr",
+      "to": "/help/publications/books/bioinformatics-and-computational-biology-solutions",
+      "keepSuffix": true
+    },
+    {
+      "from": "/workshops",
+      "to": "/help/course-materials",
+      "keepSuffix": true
+    },
+    {
+      "from": "/docs/faq",
+      "to": "/about/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/overview",
+      "to": "/about",
+      "keepSuffix": true
+    },
+    {
+      "from": "/services",
+      "to": "/help/course-materials/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/download",
+      "to": "/install/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/bioc2013",
+      "to": "https://secure.bioconductor.org/BioC2013",
+      "keepSuffix": true
+    },
+    {
+      "from": "/apptest",
+      "to": "/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/slogan",
+      "to": "/about/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/talks",
+      "to": "/help/course-materials/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/News",
+      "to": "/help/events/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/mogr",
+      "to": "/help/publications/books/bioinformatics-and-computational-biology-solutions",
+      "keepSuffix": true
+    },
+    {
+      "from": "/bugs",
+      "to": "/help/mailing-list/posting-guide/",
+      "keepSuffix": false
+    },
+    {
+      "from": "/pub",
+      "to": "/help/publications",
+      "keepSuffix": true
+    },
+    {
+      "from": "/QA",
+      "to": "/help/publications/",
+      "keepSuffix": false
+    }
+  ]
+}

@@ -8,7 +8,10 @@ import {
   decodePath,
   notModified,
   resolveLinks,
+  archiveFallback,
+  redirectFor,
 } from "./src/keys.ts";
+import redirects from "./src/redirects.json" with { type: "json" };
 
 // Real entries from the 2026-07-30 docroot listing, not invented ones.
 // `find mirror -type l -printf '%P\t%l\n'` is what sync.sh publishes.
@@ -78,6 +81,25 @@ test("immutable only for version-stamped archives", () => {
   assert.match(cacheControl("packages/x_1.0.tgz"), /immutable/);
   // Edge TTL is uniform; freshness comes from purge-on-sync.
   for (const k of ["a/b.css", "a/b.tar.gz"]) assert.match(cacheControl(k), /s-maxage=31536000/);
+});
+
+test("short-lived filetypes get the .htaccess FilesMatch browser TTL", () => {
+  // These regenerate on every build, not just every sync -- PACKAGES/VIEWS
+  // drive install.packages(), so a stale copy is a broken install, not just
+  // a stale page. .htaccess (inventory/htaccess-20260730.conf:18-44).
+  assert.match(cacheControl("packages/3.24/bioc/src/contrib/PACKAGES"), /max-age=30(?!\d)/);
+  assert.match(cacheControl("packages/3.24/bioc/VIEWS"), /max-age=30(?!\d)/);
+  assert.match(cacheControl("BiocInstaller.dcf"), /max-age=60(?!\d)/);
+  // .js/.json: the one case where the port gives a *longer* browser TTL
+  // than this repo's own 5 min default -- js/bioconductor.js is not
+  // immutable (unhashed name), but it does regenerate slower than HTML.
+  // Unhashed JS stays on the short default even though upstream .htaccess
+  // says A600: purge clears the edge, never browsers, so a longer browser
+  // TTL is exactly how a fix stays hidden from returning visitors.
+  assert.match(cacheControl("js/bioconductor.js"), /max-age=300(?!\d)/);
+  assert.match(cacheControl("shields/foo.svg"), /max-age=30(?!\d)/);
+  // Not a FilesMatch type: falls through to the ordinary 5 min default.
+  assert.match(cacheControl("style/base/colors.css"), /max-age=300(?!\d)/);
 });
 
 test("extensionless keys stay reachable (flattened redirects)", () => {
@@ -187,6 +209,109 @@ test("no link map means unchanged behaviour", () => {
   // still serve every non-symlinked path exactly as before.
   assert.deepEqual(candidates("/help/faq"), ["help/faq.html", "help/faq/index.html", "help/faq"]);
   assert.equal(resolveLinks("packages/release/bioc", {}), "packages/release/bioc");
+});
+
+test("archiveFallback keys archived packages onto the migrated OSN layout", () => {
+  // Real shape from .htaccess:65-83 -- versions before the current
+  // release/devel pair had their src/contrib tarballs 302'd to OSN.
+  assert.equal(
+    archiveFallback("packages/2.10/bioc/src/contrib/DESeq_1.0.tar.gz", LINKS),
+    "archive.bioconductor.org/packages/2.10/bioc/src/contrib/DESeq_1.0.tar.gz",
+  );
+  // The "Archive/" subpath (old versions-of-versions) is not special-cased
+  // in the port -- same version gate, same key shape.
+  assert.equal(
+    archiveFallback("packages/3.15/bioc/src/contrib/Archive/DESeq2/DESeq2_1.20.0.tar.gz", LINKS),
+    "archive.bioconductor.org/packages/3.15/bioc/src/contrib/Archive/DESeq2/DESeq2_1.20.0.tar.gz",
+  );
+  // Current release/devel are never archived -- their tarballs live in the
+  // ordinary docroot mirror, same as everything else under packages/3.23/.
+  assert.equal(archiveFallback("packages/3.23/bioc/html/DESeq2.html", LINKS), null);
+  assert.equal(archiveFallback("packages/3.24/bioc/src/contrib/PACKAGES", LINKS), null);
+  // Not a "packages/<version>/" path at all -- named repos (lindsey,
+  // omegahat) and non-package prefixes (help/, checkResults/) don't match.
+  assert.equal(archiveFallback("packages/lindsey/release/index.html", LINKS), null);
+  assert.equal(archiveFallback("checkResults/3.10/bioc-LATEST/index.html", LINKS), null);
+
+  // Which versions are current is read from the symlink map, not compiled
+  // in. Roll release to 3.25 and 3.23 becomes archivable with no deploy --
+  // the case a hardcoded pair would have got wrong until someone shipped.
+  const rolled = { "packages/release": "3.25", "packages/devel": "3.26" };
+  assert.equal(
+    archiveFallback("packages/3.23/bioc/src/contrib/x.tar.gz", rolled),
+    "archive.bioconductor.org/packages/3.23/bioc/src/contrib/x.tar.gz",
+  );
+  assert.equal(archiveFallback("packages/3.25/bioc/src/contrib/x.tar.gz", rolled), null);
+
+  // No map means we cannot tell current from archived. Add nothing: a wrong
+  // archive key would be a silently wrong 200, a missing one only the 404
+  // we were already serving.
+  assert.equal(archiveFallback("packages/2.10/bioc/src/contrib/x.tar.gz", {}), null);
+});
+
+test("candidates tries the archive fallback last, only for old versions", () => {
+  // No archive fallback for the current pair -- resolveLinks already
+  // produced the real key.
+  assert.deepEqual(candidates("/packages/release/bioc/", LINKS), [
+    "packages/3.23/bioc/index.html",
+  ]);
+  // Old version, extensionless: the archive fallback is appended after
+  // every ordinary candidate form, not instead of them -- a docroot hit
+  // (the html/vignette pages, which upstream never redirected) still wins.
+  assert.deepEqual(candidates("/packages/2.10/bioc/vignettes/x", LINKS), [
+    "packages/2.10/bioc/vignettes/x.html",
+    "packages/2.10/bioc/vignettes/x/index.html",
+    "packages/2.10/bioc/vignettes/x",
+    "archive.bioconductor.org/packages/2.10/bioc/vignettes/x.html",
+    "archive.bioconductor.org/packages/2.10/bioc/vignettes/x/index.html",
+    "archive.bioconductor.org/packages/2.10/bioc/vignettes/x",
+  ]);
+});
+
+test("redirectFor: exact wins over prefix, longest prefix wins over shorter", () => {
+  const rs = {
+    exact: { "/overview/acks.html": "/about/" },
+    prefix: [
+      // Deliberately out of length order, to prove redirectFor doesn't
+      // depend on caller-supplied ordering the way the generator's own
+      // sort guarantees for the real file.
+      { from: "/overview", to: "/about", keepSuffix: true },
+      { from: "/overview/coredevs", to: "/about/core-team/", keepSuffix: false },
+    ],
+  };
+  // Exact beats prefix even though "/overview" is also a textual prefix of
+  // "/overview/acks.html".
+  assert.equal(redirectFor("/overview/acks.html", rs), "/about/");
+  // Both prefixes match "/overview/coredevs/x"; the shorter one would win
+  // if length weren't respected, giving the wrong (catch-all) target.
+  assert.equal(redirectFor("/overview/coredevs/x", rs), "/about/core-team/");
+  // Suffix-preserving: "/overview$1" behaviour from .htaccess:193.
+  assert.equal(redirectFor("/overview/related", rs), "/about/related");
+  assert.equal(redirectFor("/unrelated", rs), null);
+});
+
+test("redirectFor against the generated redirects.json: real .htaccess rules", () => {
+  const rs = redirects as { exact: Record<string, string>; prefix: { from: string; to: string; keepSuffix: boolean }[] };
+  // .htaccess:117 docs/papers.*$ -> fixed target, suffix dropped.
+  assert.equal(redirectFor("/docs/papers/some/old/thing", rs), "/help/publications/");
+  // .htaccess:170 pub(.*)$ -> /help/publications$1, suffix kept.
+  assert.equal(redirectFor("/pub/RBioinf/foo.pdf", rs), "/help/publications/books/r-programming-for-bioinformatics/foo.pdf");
+  // .htaccess:55+253 -- PT rewrite collapsed with the prefix rule it fed
+  // into, into one direct redirect.
+  assert.equal(redirectFor("/developers/how-to/git-mirror/", rs), "/about/mirrors/mirror-how-to.html");
+  // .htaccess:287, bare `Redirect` -- prefix match, suffix appended, by the
+  // directive's own semantics rather than a wildcard in the pattern.
+  assert.equal(redirectFor("/bioc2013/schedule", rs), "https://secure.bioconductor.org/BioC2013/schedule");
+  // .htaccess:112-113 container-binaries -- version reused verbatim in the
+  // target, expanded per-version by the generator rather than parsed as a
+  // backreference.
+  assert.equal(
+    redirectFor("/packages/3.20/container-binaries/src/foo.tar.gz", rs),
+    "https://storage.googleapis.com/bioconductor-packages/3.20/container-binaries/bioconductor_docker/src/foo.tar.gz",
+  );
+  // OSN rules never appear as redirects at all -- they became
+  // archiveFallback() key mapping instead.
+  assert.equal(redirectFor("/packages/2.10/bioc/src/contrib/foo.tar.gz", rs), null);
 });
 
 test("cache hits honour client validators", () => {

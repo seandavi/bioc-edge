@@ -265,7 +265,96 @@ duplicate of bioconductor.org, which would compete with the real site in results
 script overwrites it with `Disallow: /`. Remove that only if this mirror is ever promoted
 to production.
 
-## Redirects — unresolved
+## Redirects
+
+### .htaccess rules — ported
+
+`inventory/htaccess-20260730.conf` (289 lines: 92 `RewriteRule`, 51 `RedirectMatch`, 1
+`Redirect`) is upstream's actual redirect behaviour; `worker/src/redirects.json` was `{}`
+before this. `worker/gen-redirects.ts` parses the snapshot and regenerates it —
+`node worker/gen-redirects.ts inventory/htaccess-20260730.conf worker/src/redirects.json`
+— rather than hand-transcribing ~150 target URLs, which is exactly how a typo survives
+review. Commit both the generator and its output; re-run the generator (not a hand edit)
+when the snapshot is refreshed.
+
+The rules split into three kinds, and only two of them are redirects at all:
+
+- **36 exact matches** (`redirects.json.exact`) — one specific old URL, one target.
+- **115 prefix rules** (`redirects.json.prefix`) — an old path prefix, either collapsed
+  onto one fixed target (`/docs/papers*` → `/help/publications/`) or rewritten with the
+  remainder kept (`/pub(.*)$` → `/help/publications$1`). 30 of the 115 are the
+  `container-binaries` rule expanded per BioC version (3.10–3.24) rather than parsed as a
+  backreference — see "Found wrong upstream" below for why 3.0–3.9 are absent.
+  `redirectFor()` in `worker/src/keys.ts` checks `exact` first, then the longest matching
+  `prefix.from` — the same result Apache's first-matching-`RewriteRule`-wins gave, since
+  `[R]` stops rule processing at the first match. It scans for the longest match itself
+  rather than trusting the generator's sort order, so a hand-edited `redirects.json`
+  can't silently misorder itself into the wrong rule.
+- **The OSN block (15 rules, `.htaccess:65–83`) is not a redirect port at all.** Per "The
+  OSN archive moves too" above, that content is migrating into this bucket, so
+  `/packages/<old-version>/...` needs a **key**, not a 301. `archiveFallback()` in
+  `keys.ts` appends `archive.bioconductor.org/<key>` as a last-resort R2 candidate
+  whenever the version segment isn't the current release/devel pair (hardcoded
+  `"3.23"`/`"3.24"`, same convention `rsync-filter` already uses for `checkResults/`).
+  It's gated on version only, not on the specific subpath each `.htaccess` rule names
+  (`bioc/src/contrib`, `data/annotation/{src,bin}`, `workflows/*`, …) — the OSN mirror is
+  the whole `packages/<version>/` tree for those releases, and trying the archive key
+  after every other candidate has already missed costs one extra R2 op on a genuine 404
+  and nothing on a hit. Simpler and more complete than replicating each subpath.
+
+All ported redirects answer 301 regardless of the original status (301 or 302) — the
+existing single-hop-301 decision below, applied uniformly, not something new.
+
+**Not ported**, each for a specific reason:
+
+| Rule(s) | Why not |
+|---|---|
+| `%{ENV:proto}` setup (`.htaccess:6–10`) | Cloudflare always terminates TLS; the Worker never sees http. Every surviving target that used `%{ENV:proto}` or literal `http://` was rewritten to `https://` instead — see "Found wrong upstream." |
+| `www.` → apex (`.htaccess:52–53`) | Host-based, not path-based — out of scope for a map keyed on pathname. A zone-level Cloudflare Redirect Rule is the right home if this is still wanted; see "Found wrong upstream," it may already be dead. |
+| `(.*)/index_html$` (`.htaccess:54`) | Legacy Drupal artifact, open-ended pattern, no enumerable path list, no known live links. |
+| Directory-slash rules (`DirectorySlash On`, `.htaccess:48`; the `REQUEST_FILENAME -d` block, `.htaccess:60–63`; the "Is this valid?" block, `.htaccess:202–205`) | Both need a filesystem/existence check per request, which the Worker can't do without an extra R2 op per path segment. Superseded anyway: `candidates()` already serves `/help/faq` directly via `.html`, then `/index.html`, then bare, instead of 301-redirecting to add a slash — simpler, and one round trip cheaper. |
+| `help/workflows/annotation/(.*)/$`, `help/workflows/(.*)/$` (`.htaccess:133–134`) | The capture lands mid-target (`.../annotation/$1/index.html`), not at the end — not a plain prefix rewrite. Two rules, both legacy `/help/workflows/` links superseded by `/packages/release/workflows/` pages; not worth a template matcher for two rows. |
+| `ExpiresByType text/html A600`, `text/javascript A600` (`.htaccess:15–16`) | **Deliberately not adopted.** This repo already decided the browser TTL for unhashed assets, and 600s contradicts it: purging clears the edge, never browsers, so a longer browser TTL is precisely how a fix stays hidden from returning visitors. `style/base/colors.css` and `js/bioconductor.js` carry no content hash, so both stay on the 5-minute default — see §Cache. Adopting upstream's number here would have quietly reversed a tested decision as a side effect of a redirect port. |
+
+The `<FilesMatch>` `Cache-Control` overrides (`.htaccess:18–44`) and the checkResults
+concern are **not** in `redirects.json` at all, per the reasoning above that these are a
+different kind of rule:
+
+- `cacheControl()` in `keys.ts` now special-cases `PACKAGES`/`PACKAGES.gz`/`PACKAGES.rds`/
+  `VIEWS` (30s — these drive `install.packages()`, so staleness is a broken install, not
+  a stale page), `BiocInstaller.dcf` (60s), `config.yaml`/`gitlog.xml`/`.svg`/`.csv` (30s),
+  and `config.yaml`/`gitlog.xml`/`.svg`/`.csv` (30s). Every entry *shortens* the
+  default, which is the table's whole purpose — anything wanting a **longer** browser
+  TTL than 300s is rejected on the reasoning in §Cache, so `.js`/`.json` fall through
+  to the default rather than taking upstream's 600s. Everything else keeps the existing
+  binary immutable-archive-vs-300s split; that reasoning is unchanged.
+- `checkResults/` has **no rule in `.htaccess` at all** — nothing redirects or rewrites
+  it, so a request for a dropped old-version report (`rsync-filter` keeps only 3.23/3.24)
+  simply misses R2 and 404s through the existing `notFound()` path. Confirmed by
+  inspection, not new code: there was nothing to port.
+
+**Found wrong upstream**, worth reporting on their own:
+
+- The `www.` → apex rule (`.htaccess:52–53`) contradicts the live crawl in "Absolute
+  URLs" above, which found `www.bioconductor.org` serving 200 directly. Either the rule
+  doesn't fire in production or something upstream of it intercepts first — worth
+  checking before assuming it's still wanted.
+- `RedirectMatch`'s `(3.[0-9][0-9])` for `container-binaries` (`.htaccess:112–113`)
+  requires *exactly two* digits after "3." — it does not match single-digit minors
+  (3.0–3.9). The port is faithful to what the rule actually matches (3.10–3.24
+  generated), not to what was probably intended.
+- `docs/techreports/TR1/relProjTR.pdf$` and `.../TR2/currProgTR.pdf$` (`.htaccess:173–174`)
+  target `.../relProjTR.pdf$1` — a literal `$1` with no capturing group in the pattern to
+  supply it. `gen-redirects.ts` drops the dead reference; upstream likely never noticed
+  because the file being one-off downloads makes it low-traffic.
+- The `workflows/webvigs` OSN rule (`.htaccess:82–83`) is byte-identical, twice — a
+  copy-paste duplicate. Doesn't affect the port (OSN rules aren't parsed as redirects at
+  all) but is worth flagging alongside the other upstream findings in this doc.
+- `BioC2015/` (`.htaccess:223`) and `developers/package-guidelines*` (`.htaccess:240`)
+  target plaintext `http://`, the same downgrade bug already flagged for `/books/` below
+  — not isolated to one section of the file.
+
+### /books/ redirects — still unresolved
 
 `/books/OSCA`, `/books/SingleRBook` and friends are redirects. Production answers them
 with a **four-hop chain that twice bounces through plaintext `http://`**:
