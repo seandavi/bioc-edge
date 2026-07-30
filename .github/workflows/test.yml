@@ -1,0 +1,33 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22.18+ strips TypeScript types natively, which is why worker/
+      # has no package.json, no node_modules and no build step. Pinning the
+      # major matters: on older Node `node --test worker/test.ts` fails to
+      # parse rather than failing a test, which reads as a broken suite.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: worker key mapping and link resolution
+        run: node --test worker/test.ts
+
+      # Exercises real rsync, no network: builds fixture trees, runs the
+      # itemize parsing and the scope filter against them. The filter is the
+      # one that fails quietly in both directions -- dropping wanted content,
+      # or silently pulling 2.3M unwanted objects.
+      - name: rsync itemize parsing and scope filter
+        run: ./test-itemize.sh
+
+      - name: shell syntax
+        run: for f in *.sh inventory/*.sh; do bash -n "$f"; done
