@@ -49,9 +49,25 @@ zcat osn-archive-latest.tsv.gz | awk -F'\t' \
 - **the upstream docroot host** is locked to `rrsync` via `ForceCommand`. No shell, no sftp (exit 255).
   rsync-over-ssh only — which is why rclone cannot talk to it and every sync has to
   stage through a local mirror. See §Incremental sync in `../MIGRATION.md`.
-- **OSN** is anonymous S3 at `https://mghp.osn.xsede.org/`. Bucket-root `lsd` returns
-  nothing (no list permission); paths under the bucket read fine. 68 top-level prefixes,
-  of which only `archive.bioconductor.org/` is in scope here.
+- **OSN** is anonymous S3 at `https://mghp.osn.xsede.org/`. Bucket-root `lsd` **does**
+  list -- an earlier note here claimed otherwise, which was wrong. 68 top-level prefixes,
+  of which `archive.bioconductor.org/` is the only one this migration touches.
+  `refresh.sh` snapshots that prefix alone.
+
+  The bucket is much larger than this migration's scope, and worth knowing about before
+  anyone reasons from "the OSN bucket" as if it meant the archive:
+
+  | Prefix | Objects | Size |
+  |---|---|---|
+  | `AnnotationHub` | 98,443 | 10.12 TiB |
+  | `ExperimentHub` | 8,722 | 593 GiB |
+  | `archive.bioconductor.org` | 301,217 | 4.24 TiB |
+
+  The two hubs are served by a separate Bioconductor service and fetched by the
+  `AnnotationHub`/`ExperimentHub` R packages via a metadata database -- nothing under
+  `bioconductor.org`'s docroot, the crawl, or `.htaccess` refers to them. They are out of
+  scope, and are recorded here only so the scope boundary is a decision rather than an
+  oversight.
 - Paths in the docroot are well behaved: across 4,620,887 entries, zero contain a tab,
   pipe, backslash, or control character. Delimiter-splitting `rsync --out-format`
   output is safe — `sync.sh` relies on this.
