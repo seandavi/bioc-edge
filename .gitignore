@@ -6,3 +6,5 @@ node_modules/
 worker/dev.log
 worker/tail.json
 sync-*.log
+sync-*.log.*
+inventory/*.gz

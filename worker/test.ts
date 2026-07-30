@@ -7,7 +7,27 @@ import {
   contentType,
   decodePath,
   notModified,
+  resolveLinks,
 } from "./src/keys.ts";
+
+// Real entries from the 2026-07-30 docroot listing, not invented ones.
+// `find mirror -type l -printf '%P\t%l\n'` is what sync.sh publishes.
+const LINKS = {
+  "packages/release": "3.23",
+  "packages/devel": "3.24",
+  "books/release": "3.23",
+  "packages/3.23/bioc/bin/windows/contrib/4.7": "4.6",
+  "packages/2.10/extra/bin/windows64": "windows",
+  "packages/1.8/lindsey/bin/macosx/i386": "universal",
+  "packages/lindsey/release": "../release/lindsey",
+  "packages/lindsey/index.html": "release/index.html",
+  "packages/lindsey/stable": ".",
+  "packages/omegahat/1.6/src/contrib/Source": ".",
+  "checkResults/3.10/bioc-LATEST": "bioc-20200415",
+  "checkResults/2.10/bioc-20120924": "bioc-LATEST/",
+  "LoriTempToRemove/data/annotation/VIEWS":
+    "the live docroot/packages/3.18/data/annotation/VIEWS",
+};
 
 test("directory paths get index.html", () => {
   assert.deepEqual(candidates("/"), ["index.html"]);
@@ -75,6 +95,98 @@ test("content type falls back rather than serving none", () => {
   assert.equal(contentType("packages/x_1.0.tar.gz"), "application/gzip");
   assert.match(contentType("books/OSCA"), /^text\/html/); // extensionless
   assert.match(contentType("packages/3.24/bioc"), /^text\/html/); // dot is a dir
+});
+
+test("release and devel resolve as prefixes, not just as whole paths", () => {
+  assert.equal(
+    resolveLinks("packages/release/bioc/html/DESeq2.html", LINKS),
+    "packages/3.23/bioc/html/DESeq2.html",
+  );
+  assert.equal(resolveLinks("packages/devel/bioc/VIEWS", LINKS), "packages/3.24/bioc/VIEWS");
+  assert.equal(resolveLinks("packages/release", LINKS), "packages/3.23");
+  assert.equal(resolveLinks("books/release/OSCA/index.html", LINKS), "books/3.23/OSCA/index.html");
+});
+
+test("contrib R-version aliases resolve -- the install.packages() path", () => {
+  // One build serves two R versions. Losing this 404s installs on 4.7 while
+  // every browse URL keeps working, so it fails quietly.
+  assert.equal(
+    resolveLinks("packages/3.23/bioc/bin/windows/contrib/4.7/DESeq2_1.44.0.zip", LINKS),
+    "packages/3.23/bioc/bin/windows/contrib/4.6/DESeq2_1.44.0.zip",
+  );
+  assert.equal(
+    resolveLinks("packages/2.10/extra/bin/windows64/contrib/x.zip", LINKS),
+    "packages/2.10/extra/bin/windows/contrib/x.zip",
+  );
+  assert.equal(
+    resolveLinks("packages/1.8/lindsey/bin/macosx/i386/contrib/y.tgz", LINKS),
+    "packages/1.8/lindsey/bin/macosx/universal/contrib/y.tgz",
+  );
+});
+
+test("relative targets resolve against the link's own directory, and chain", () => {
+  // lindsey/release -> ../release/lindsey, then packages/release -> 3.23
+  assert.equal(
+    resolveLinks("packages/lindsey/release/html/index.html", LINKS),
+    "packages/3.23/lindsey/html/index.html",
+  );
+  // Three hops, starting from a link on a file rather than a directory:
+  //   packages/lindsey/index.html  (-> release/index.html)
+  //   packages/lindsey/release/index.html  (-> ../release/lindsey)
+  //   packages/release/lindsey/index.html  (-> 3.23)
+  //   packages/3.23/lindsey/index.html
+  // The lindsey repo's landing page, which is what that path means.
+  assert.equal(
+    resolveLinks("packages/lindsey/index.html", LINKS),
+    "packages/3.23/lindsey/index.html",
+  );
+});
+
+test("self-referential links collapse instead of looping", () => {
+  // `stable -> .` means packages/lindsey/stable/X is packages/lindsey/X.
+  assert.equal(resolveLinks("packages/lindsey/stable/src", LINKS), "packages/lindsey/src");
+  assert.equal(
+    resolveLinks("packages/omegahat/1.6/src/contrib/Source/pkg_1.0.tar.gz", LINKS),
+    "packages/omegahat/1.6/src/contrib/pkg_1.0.tar.gz",
+  );
+});
+
+test("cycles and escapes stop rather than hang or leave the docroot", () => {
+  // bioc-20120924 -> bioc-LATEST/ -> bioc-20200415 is fine, but a map where
+  // the two point at each other must still terminate.
+  const cyclic = { "a/x": "y", "a/y": "x" };
+  assert.doesNotThrow(() => resolveLinks("a/x/f.html", cyclic));
+
+  // Absolute target escapes the mirror. Left unresolved, so it 404s -- which
+  // is right: the unresolved key is a symlink and was never uploaded.
+  assert.equal(
+    resolveLinks("LoriTempToRemove/data/annotation/VIEWS", LINKS),
+    "LoriTempToRemove/data/annotation/VIEWS",
+  );
+  // Climbing above the docroot is refused the same way.
+  assert.equal(resolveLinks("a/b/c.html", { "a/b": "../../../etc" }), "a/b/c.html");
+});
+
+test("candidates resolves links on both sides of the index.html expansion", () => {
+  // Directory link: only visible in the prefix, before expansion.
+  assert.deepEqual(candidates("/packages/release/bioc/", LINKS), [
+    "packages/3.23/bioc/index.html",
+  ]);
+  // File link: only visible after the expansion produced index.html.
+  assert.deepEqual(candidates("/packages/lindsey/", LINKS), ["packages/3.23/lindsey/index.html"]);
+  // Extensionless expansion, each candidate resolved, duplicates collapsed.
+  assert.deepEqual(candidates("/packages/release/bioc", LINKS), [
+    "packages/3.23/bioc.html",
+    "packages/3.23/bioc/index.html",
+    "packages/3.23/bioc",
+  ]);
+});
+
+test("no link map means unchanged behaviour", () => {
+  // The map is loaded from R2 at runtime; if it is missing the Worker must
+  // still serve every non-symlinked path exactly as before.
+  assert.deepEqual(candidates("/help/faq"), ["help/faq.html", "help/faq/index.html", "help/faq"]);
+  assert.equal(resolveLinks("packages/release/bioc", {}), "packages/release/bioc");
 });
 
 test("cache hits honour client validators", () => {

@@ -61,6 +61,100 @@ It also splits phase 1 in two, because the halves have nothing in common:
 **Do not run a media crawl against master to make a point.** The first 0.8 GB was pulled
 before this was noticed.
 
+## Upstream shape
+
+We now have rsync access to the docroot (`$RSYNC_SRC` = `the live docroot`),
+which replaces guesses with a listing. `inventory/refresh.sh` snapshots it; numbers below
+are from 2026-07-30, taken **without** `-L`, so `release`/`devel` are counted once.
+
+**3,710,600 files, 910,039 directories, 248 symlinks, 488.5 GB.**
+
+That corrects the earlier "809 GB / 1.28M files" for `packages/`, which was measured with
+`-L` and double-counted 3.23/3.24 through the symlinks. Bytes went down; file count went
+up a lot, because that figure only covered `packages/`.
+
+| Top level | Size | Files |
+|---|---|---|
+| `packages/` | 417.5 GB | 1,016,510 |
+| `checkResults/` | 38.3 GB | **2,607,459** |
+| `help/` | 22.0 GB | 8,439 |
+| `LoriTempToRemove/` | 6.1 GB | 2,701 |
+| `course-packages/` | 2.6 GB | 116 |
+| `books/` | 1.5 GB | 11,267 |
+| `shields/` | 0.0 GB | 43,773 |
+| everything else | 0.6 GB | ~20,000 |
+
+Two things fall out of this that were not visible from the HTTP crawl:
+
+- **`checkResults/` is 70% of all objects for 8% of the bytes**, and it regenerates
+  nightly. R2 bills per operation, so object count — not size — is what a build-driven
+  sync costs. `robots.txt` already disallows it and it is build telemetry rather than
+  published content, so **excluding it should be the default and hosting it the argued
+  exception.** Unresolved: build reports are genuinely useful to maintainers.
+- **`LoriTempToRemove/`** is 6.1 GB of abandoned staging sitting in the live docroot. The
+  name is upstream's. Excluded in `sync.sh`; worth reporting alongside the `sitemap.xml`
+  bug.
+
+### Symlinks are broader than assumed
+
+The plan so far accounted for `packages/release` and `packages/devel`. The listing shows
+248, and the shapes differ:
+
+- **Release aliases**, the known case: `packages/release → 3.23`, `packages/devel → 3.24`,
+  and the same pair under `books/` and `checkResults/`.
+- **R-version aliases** inside `contrib/`, ~150 of them:
+  `packages/3.23/bioc/bin/windows/contrib/4.7 → 4.6`, `bin/windows64 → windows`,
+  `bin/macosx/i386 → universal`. These are how one build serves two R versions and they
+  are load-bearing for `install.packages()` — dropping them breaks installs on the aliased
+  R version.
+- **Dated build aliases**: `checkResults/3.10/bioc-LATEST → bioc-20200415`, and several
+  pointing the *other* way (`bioc-20120924 → bioc-LATEST/`).
+- **Absolute targets** that escape the docroot, e.g.
+  `LoriTempToRemove/data/annotation/VIEWS → the live docroot/packages/3.18/data/annotation/VIEWS`.
+  Any resolver has to reject these rather than follow them.
+
+Object storage has no symlinks, so each is either a prefix rewrite in the Worker or a
+duplicated object. Duplication is out for the big ones — `packages/release → 3.23` would
+store 188 GB twice — so it is rewrites, in `resolveLinks()`.
+
+**The map is generated, not authored.** Look at the change rates above: `bioc-LATEST`
+moves nightly and `contrib/` aliases appear whenever an R version rolls, unannounced. A
+map checked into this repo would mean a commit and a `wrangler deploy` per upstream
+change, with the Worker wrong until someone noticed. So it is upstream state, in the same
+category as the tree itself: `sync.sh` regenerates it from the mirror on every pull
+(`find -type l`, which rsync has already recreated locally) and publishes it to
+`_symlinks.json`. The Worker reads that object and memoises it per isolate for 5 minutes.
+Algorithm in code, data in the bucket — the same split `/bioc-version` already uses.
+
+Consequence worth noting: `release`/`devel` stop being a special case. They are two
+ordinary entries in the map, so the version-file lookup the plan called for is not needed.
+
+What `resolveLinks()` has to handle, all of it drawn from the real listing:
+
+- **Longest prefix wins, then repeat**, because links chain up to three deep:
+  `packages/lindsey/index.html` → `packages/lindsey/release/index.html` →
+  `packages/release/lindsey/index.html` → `packages/3.23/lindsey/index.html`.
+- **Targets are relative to the link's own directory**, not to the docroot —
+  `../release/lindsey` from `packages/lindsey/` is `packages/release/lindsey`.
+- **Resolution runs after the `index.html` expansion**, because links land on both sides
+  of it: `packages/release` is a directory link visible only in the prefix, while
+  `packages/lindsey/index.html` is a link on the file the expansion just produced.
+- **`stable → .` makes no progress** and **cycles make progress forever**
+  (`bioc-20120924 → bioc-LATEST/` pointing back). A hop limit is load-bearing here, not
+  defensive padding.
+- **Absolute targets and climbs above root are left unresolved**, which 404s. That is
+  correct rather than a compromise: the unresolved key is a symlink, and symlinks are
+  never uploaded, so there is no object either way.
+
+The `contrib/` aliases are the ones to get right first — they are the install path, not
+the browse path, so losing them breaks `install.packages()` on the aliased R version
+while every browse URL keeps working. `worker/test.ts` pins each case above against real
+entries from the listing.
+
+Paths themselves are well behaved: across all 4,620,887 entries, none contains a tab,
+pipe, backslash, or control character. `sync.sh` relies on this when it splits rsync's
+`--out-format` output.
+
 ## Scope, in phases
 
 Phase 1 fixes the outage. Phase 3 is the large, risky one and is deliberately last.
@@ -170,6 +264,8 @@ the byte-identity diff gate.
 ## Sync
 
 `rclone sync ./mirror r2:bioc-site` on the same cadence the site rebuilds (hourly).
+That is the phase-1 path and it is fine at ~500 objects. It does not survive contact with
+3.7M — see §Incremental sync below.
 
 - rclone compares size + modtime, falling back to MD5; R2 ETags are MD5 for single-part
   uploads, so unchanged objects are skipped. Do not use `--size-only` — HTML edits often
@@ -190,6 +286,61 @@ the byte-identity diff gate.
   `octet-stream` before the fix and still serves that, while never-requested pages like
   `/packages/DESeq2` serve `text/html` correctly. With `s-maxage=31536000` a wrong cached
   entry persists for a year unless purged.
+
+## Incremental sync
+
+At phase-3 scale, `rclone sync` is the wrong tool for deciding *what* changed, for a
+specific reason: R2's `ListObjectsV2` returns size, ETag, and LastModified, but not user
+metadata — and rclone keeps mtime in user metadata. Its default size+modtime comparison
+therefore forces a `HEAD` per object. 3.7M Class B ops every run, and hours of listing
+before a byte moves.
+
+`--checksum` sidesteps that (ETag is the MD5 for single-part uploads, so both sides come
+from the LIST), but it has to read all 488 GB locally to hash it. Fine weekly, not hourly.
+
+rsync already knows the answer, and it has to run anyway — `rrsync` is the only way into
+the upstream docroot host at all, so every sync stages through a local mirror regardless. Let the pull
+compute the delta:
+
+```sh
+RSYNC_SRC=$RSYNC_SRC ./sync.sh
+```
+
+`sync.sh` then does three things:
+
+1. `rsync -a --delete --out-format='%i|%n'` — pull, and itemize. `>f` lines are the
+   candidate keys, `*deleting` lines the removals (minus directories, which have a
+   trailing slash and do not exist in object storage).
+2. `rclone copy --files-from <candidates> --no-traverse --checksum` — upload. `--files-from`
+   makes rclone stat only the named keys instead of listing the bucket; `--no-traverse` is
+   correct *here* precisely because the list is short, and would be the disaster it avoids
+   if used on a full sync.
+3. Purge the URLs rclone reports as `Copied`/`Updated`, plus the deletions.
+
+**The `--checksum` in step 2 is load-bearing, not tidiness.** rsync's quick check is
+size+mtime, so a file the builder rewrote with identical bytes itemizes `>f..t......` and
+enters the candidate list. Across `checkResults/`'s 2.6M nightly-regenerated files that
+would be millions of pointless uploads and a full-zone purge every night. rsync cuts 3.7M
+to thousands cheaply; the checksum pass cuts thousands to what actually moved, precisely.
+Hence also step 3 keying on rclone's log rather than rsync's candidates — otherwise the
+purge list is the pre-filter list and `PURGE_MAX` trips most nights.
+`test-itemize.sh` pins this behavior so the checksum pass does not get optimized away.
+
+**Trade: rsync becomes the sole authority on bucket state.** Nothing reads R2 to confirm,
+so a failed upload or a hand-edited object diverges silently and permanently. That is
+what makes reconciliation mandatory rather than nice-to-have:
+
+```sh
+RECONCILE=1 ./sync.sh      # rclone check --checksum, reports missing and differing
+```
+
+Weekly is the intent. It is the expensive full comparison — just not the hourly one.
+
+**Not yet settled:** whether the hourly pull should walk the whole docroot at all. rsync
+still stats 3.7M local files per run to build the delta, which is cheap per file but not
+free. If that proves too slow, the split is by cadence — `packages/` hourly,
+`checkResults/` (if included at all) nightly, the static site on its own — via separate
+`RSYNC_SRC` invocations against subtrees.
 
 ## Serving
 
@@ -443,12 +594,11 @@ rsync -e "ssh" -zrtlv --delete bioc-rsync@master.bioconductor.org:release /dest/
   written runbook, and a decision about scoped read-only R2 tokens.
 
 **`release` and `devel` are symlinks** to version directories (`3.24`, etc.), which
-operators re-point every 6 months at release. Object storage has no symlinks. On R2 that
-means either storing 188 GB twice under both prefixes, or resolving `packages/release/`
-→ `packages/3.24/` as a prefix rewrite in the Worker. The rewrite is obviously right and
-cheap, but it has to be designed into phase 3 rather than discovered during it. It also
-means an HTTP crawl of both `/packages/release/` and `/packages/3.24/` would fetch the
-same bytes twice under two paths.
+operators re-point every 6 months at release. Storing 188 GB twice under both prefixes is
+the alternative, so it is a prefix rewrite — now built, and generalised to all 248 links
+rather than these two. See §Upstream shape. It also means an HTTP crawl of both
+`/packages/release/` and `/packages/3.24/` would fetch the same bytes twice under two
+paths, which is a further argument for the rsync path over crawling.
 
 ## Cutover
 

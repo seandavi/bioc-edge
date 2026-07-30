@@ -5,6 +5,8 @@ import {
   contentType,
   decodePath,
   notModified,
+  LINKS_KEY,
+  type Links,
 } from "./keys.ts";
 import redirects from "./redirects.json";
 
@@ -12,6 +14,32 @@ interface Env {
   BUCKET: R2Bucket;
   LOGS?: AnalyticsEngineDataset;
   NOT_FOUND_KEY?: string;
+}
+
+/**
+ * The symlink map is upstream state, not configuration: `bioc-LATEST` links
+ * move nightly and `contrib/` aliases appear whenever an R version rolls, so
+ * checking it into the repo would mean a deploy per upstream change. sync.sh
+ * regenerates it from the mirror on every pull and publishes it here.
+ *
+ * Memoised per isolate rather than per request. Isolates are reused across
+ * many requests, so this is roughly one Class B op per isolate per TTL. The
+ * TTL is the lag between a release roll landing in the bucket and the Worker
+ * following it.
+ */
+const LINKS_TTL_MS = 300_000;
+let linksCache: { at: number; map: Links } | null = null;
+
+async function symlinks(env: Env): Promise<Links> {
+  if (linksCache && Date.now() - linksCache.at < LINKS_TTL_MS) return linksCache.map;
+  try {
+    const obj = await env.BUCKET.get(LINKS_KEY);
+    if (obj) linksCache = { at: Date.now(), map: await obj.json<Links>() };
+  } catch {
+    // Keep serving the last good map. An empty one would 404 every
+    // /packages/release/ URL on the site -- far worse than a stale alias.
+  }
+  return linksCache?.map ?? {};
 }
 
 export default {
@@ -43,7 +71,7 @@ export default {
     // cache to keep the 206 path simple.
     const ranged = req.headers.has("range");
     const cache = caches.default;
-    const keys = candidates(path);
+    const keys = candidates(path, await symlinks(env));
 
     // Entries are keyed by resolved object, not request URL, so at most a
     // couple of local lookups -- and /help/, /help and /help/index.html all
