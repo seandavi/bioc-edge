@@ -25,6 +25,7 @@ public, or quote from it publicly, before that conversation happens.
 | `rsync-filter` | **What the mirror includes.** The scope decision, in one file |
 | `finish-load.sh` | The initial mirror → R2 load, with the guards the raw rclone command lacks |
 | `cutover-diff.sh` | Cutover gate: diff bioc-dev against production |
+| `test-biocmanager.R` | Acceptance test for `BiocManager::install()` against the mirror |
 | `query.sh` | Canned Analytics Engine queries |
 | `inventory/` | Snapshots of the upstream trees, and how to query them |
 | `systemd/` | Sync and reconcile timers. Committed, deliberately not enabled |
