@@ -108,7 +108,7 @@ Two things fall out of this that were not visible from the HTTP crawl:
 
 ### The OSN archive moves too
 
-**Decided: migrate, not redirect.** 340,036 objects / 4.66 TB at
+**Decided: migrate, not redirect.** 301,217 objects / 4.66 TB at
 `osn-bioc:bir190004-bucket01/archive.bioconductor.org/packages`, holding the source
 tarballs for releases 1.8–3.22 — those releases have HTML, vignettes and manuals on
 the upstream docroot host but no tarballs, and `.htaccess:66-83` 302s out to OSN for them.
@@ -128,6 +128,21 @@ Two consequences that are easy to miss:
 - **The transfer is 4.66 TB through this host.** OSN and R2 are different providers, so
   rclone streams rather than doing a server-side copy. This is a one-time job to plan
   deliberately, not something to kick off inside a sync run.
+
+**Content-Type does not survive the copy.** rclone propagates the *source* object's MIME
+on a cross-remote copy rather than deriving it from the extension, and OSN stores
+everything as `application/octet-stream`. Harmless for the 297,685 tarballs and zips --
+browsers download them either way, and `install.packages()` never looks -- but the archive
+also holds 1,340 `.html` files and 605 extensionless text files (`PACKAGES`, `VIEWS`,
+`TIMESTAMP`), which would download instead of render. Those 1,945 are uploaded first with
+explicit types so the bulk copy sees them as current and leaves them alone; the same
+ordering trick the docroot sync uses, for the same reason -- `contentType()` in the Worker
+only fires when the type is *missing*, never when it is wrong.
+
+Note also that `rclone lsf -R` reports directory entries with size `-1`, so the archive's
+listed 340,036 lines are 301,217 real objects plus 38,819 directory markers. rclone does
+not recreate the markers, which is correct: R2 has no directories, and 38,819 empty
+objects would be 38,819 pointless Class A writes and 38,819 keys that resolve to nothing.
 
 Unlike the docroot, this content is genuinely immutable — version-stamped archive
 tarballs that never change — so after the initial load it needs no ongoing sync, and
@@ -691,10 +706,10 @@ decisions below:
 | Source | Objects | Size | Storage / month |
 |---|---|---|---|
 | Docroot, after `rsync-filter` | 1,354,223 | 453 GB | $6.80 |
-| OSN archive (decision: migrate) | 340,036 | 4,658 GB | $69.88 |
-| **Total** | **1,694,259** | **5,111 GB** | **$76.68** |
+| OSN archive (decision: migrate) | 301,217 | 4,658 GB | $69.88 |
+| **Total** | **1,655,440** | **5,111 GB** | **$76.68** |
 
-One-time Class A on initial load: ~1.7M writes, $7.62.
+One-time Class A on initial load: ~1.66M writes, $7.45.
 
 The Cloudflare zone itself can sit on the Free plan. The real variable is Workers: the
 free tier is 100k requests/day, well under current traffic, so instrumentation means
