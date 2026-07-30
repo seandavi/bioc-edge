@@ -7,6 +7,7 @@ import {
   contentType,
   decodePath,
   notModified,
+  logQuery,
   resolveLinks,
   archiveFallback,
   redirectFor,
@@ -312,6 +313,25 @@ test("redirectFor against the generated redirects.json: real .htaccess rules", (
   // OSN rules never appear as redirects at all -- they became
   // archiveFallback() key mapping instead.
   assert.equal(redirectFor("/packages/2.10/bioc/src/contrib/foo.tar.gz", rs), null);
+});
+
+test("query strings are logged bounded, so one crawler cannot blind the log", () => {
+  assert.equal(logQuery("?utm_source=twitter&utm_medium=social"), "utm_source=twitter&utm_medium=social");
+  assert.equal(logQuery(""), "");
+  assert.equal(logQuery("?"), "");
+  // No leading ? whichever form arrives.
+  assert.equal(logQuery("a=1"), "a=1");
+
+  // The one that matters. Analytics Engine rejects an oversized datapoint,
+  // and a rejected write loses the WHOLE row -- path, UA, ASN, everything --
+  // not just this field. An unbounded attacker-controlled string here would
+  // let a single crawler switch off the logging that exists to catch it.
+  const huge = "?x=" + "a".repeat(10000);
+  const got = logQuery(huge);
+  assert.ok(got.length < 300, `expected bounded, got ${got.length}`);
+  assert.match(got, /\.\.\.\[truncated\]$/);
+  // Marked, so a clipped value is never read as a complete one.
+  assert.notEqual(got, huge.slice(1));
 });
 
 test("cache hits honour client validators", () => {

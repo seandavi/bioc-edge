@@ -191,6 +191,10 @@ function log(env: Env, ctx: ExecutionContext, req: Request, status: number, cach
   ctx.waitUntil(
     Promise.resolve(
       env.LOGS.writeDataPoint({
+        // Order is the schema. Appending only -- inserting a field would
+        // shift every blob after it, so blob5 would silently start returning
+        // user agents to a query that asked for cache status. The dataset
+        // cannot be altered, so a mistake here is permanent for that dataset.
         blobs: [
           new URL(req.url).pathname,
           req.headers.get("user-agent") ?? "",
@@ -198,6 +202,12 @@ function log(env: Env, ctx: ExecutionContext, req: Request, status: number, cach
           String(cf?.asn ?? ""),
           cacheStatus,
           range,
+          // blob7, new in v3. Separate from the path deliberately: the path is
+          // what the client asked for, this is how. Two uses -- UTM
+          // attribution, and spotting cache-busting query strings, which are
+          // otherwise invisible because our cache key ignores the query, so
+          // every variant collapses onto one path and reads as normal traffic.
+          logQuery(new URL(req.url).search),
         ],
         doubles: [status],
         indexes: [String(cf?.asn ?? "")],

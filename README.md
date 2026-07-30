@@ -23,6 +23,7 @@ public, or quote from it publicly, before that conversation happens.
 | `crawl.sh` | HTTP crawl of the live site (phase 1) |
 | `sync.sh` | Mirror → R2, plus purge. `RSYNC_SRC=…` for the delta path, `RECONCILE=1` for drift |
 | `rsync-filter` | **What the mirror includes.** The scope decision, in one file |
+| `finish-load.sh` | The initial mirror → R2 load, with the guards the raw rclone command lacks |
 | `cutover-diff.sh` | Cutover gate: diff bioc-dev against production |
 | `query.sh` | Canned Analytics Engine queries |
 | `inventory/` | Snapshots of the upstream trees, and how to query them |
