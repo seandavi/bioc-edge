@@ -36,10 +36,18 @@ async function symlinks(env: Env): Promise<Links> {
   if (linksCache && Date.now() - linksCache.at < LINKS_TTL_MS) return linksCache.map;
   try {
     const obj = await env.BUCKET.get(LINKS_KEY);
-    if (obj) linksCache = { at: Date.now(), map: await obj.json<Links>() };
+    // Cache the *absence* of the map too. Storing only successes means a
+    // missing object never populates the cache, so every subsequent request
+    // re-fetches it -- and this runs before the cache lookup, so that is an
+    // R2 round trip on the hot path of every request including cache hits.
+    // Measured: 146-159ms TTFB against 44-50ms once the map resolves.
+    linksCache = { at: Date.now(), map: obj ? await obj.json<Links>() : {} };
   } catch {
-    // Keep serving the last good map. An empty one would 404 every
-    // /packages/release/ URL on the site -- far worse than a stale alias.
+    // A read failure is different from a genuine absence: keep the last good
+    // map rather than replacing it with an empty one, which would 404 every
+    // /packages/release/ URL on the site. Only back off from retrying every
+    // request if we have something to serve meanwhile.
+    if (linksCache) linksCache = { at: Date.now(), map: linksCache.map };
   }
   return linksCache?.map ?? {};
 }
