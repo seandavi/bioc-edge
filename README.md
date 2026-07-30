@@ -30,8 +30,14 @@ public, or quote from it publicly, before that conversation happens.
 | `systemd/` | Sync and reconcile timers. Committed, deliberately not enabled |
 | `worker/` | The Worker. `node --test worker/test.ts`, no build step |
 
-Tests: `./test-itemize.sh`, `./test-cutover-diff.sh`, `node --test worker/test.ts`. CI runs
-all three.
+Tests: `./test-itemize.sh`, `./test-cutover-diff.sh`, `node --test worker/test.ts`, and
+`cd worker && npm run typecheck`. CI runs all four.
+
+The typecheck is not ceremony. Unit tests exercise `keys.ts`, and `wrangler deploy`
+strips types without resolving whether a name is bound -- so a symbol used in `index.ts`
+but never imported passes both and fails at runtime, on every request. That took
+`bioc-dev` down for 12 minutes on 2026-07-30. `npm install` in `worker/` is for this
+check only; nothing is bundled and there is still no build step.
 
 ## Scope boundaries
 

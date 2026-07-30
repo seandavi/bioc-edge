@@ -19,6 +19,16 @@ jobs:
         with:
           node-version: '22'
 
+      # The gate that would have caught the 12-minute bioc-dev outage on
+      # 2026-07-30. logQuery() was used in index.ts but never imported -- the
+      # unit tests still passed, because they exercise keys.ts where it is
+      # correctly exported, and `wrangler deploy` still succeeded, because
+      # esbuild strips types without resolving whether a name is bound. Only a
+      # real typecheck reports it: TS2304 Cannot find name 'logQuery'.
+      - name: worker typecheck
+        working-directory: worker
+        run: npm install --no-audit --no-fund && npm run typecheck
+
       - name: worker key mapping and link resolution
         run: node --test worker/test.ts
 
