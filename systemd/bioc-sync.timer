@@ -1,0 +1,13 @@
+[Unit]
+Description=Hourly bioconductor.org -> R2 sync
+
+[Timer]
+OnCalendar=hourly
+# Spread load off the top of the hour; the origin is the box this project
+# exists to protect, and :00 is when everything else on the internet fires.
+RandomizedDelaySec=600
+# Catch up after downtime rather than silently skipping to the next hour.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

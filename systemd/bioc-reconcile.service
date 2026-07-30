@@ -1,0 +1,20 @@
+[Unit]
+Description=Verify R2 matches the local mirror (checksum drift check)
+Documentation=file:///home/davsean/Documents/git/bioc-cloudflare/systemd/README.md
+Conflicts=bioc-sync.service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/davsean/Documents/git/bioc-cloudflare
+EnvironmentFile=/home/davsean/Documents/git/bioc-cloudflare/.env
+Environment=RECONCILE=1
+ExecStart=/home/davsean/Documents/git/bioc-cloudflare/sync.sh
+# Hashes the whole 453 GB mirror locally. Slow by design.
+TimeoutStartSec=12h
+Nice=15
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=default.target
