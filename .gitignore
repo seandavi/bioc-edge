@@ -8,3 +8,7 @@ worker/tail.json
 sync-*.log
 sync-*.log.*
 inventory/*.gz
+mirror.urls
+mirror.redirects.tsv
+mirror.targets
+cutover-diff-*/
