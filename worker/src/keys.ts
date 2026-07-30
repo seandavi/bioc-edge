@@ -107,31 +107,6 @@ export function candidates(pathname: string, links: Links = {}): string[] {
 }
 
 /**
- * OSN archive fallback for pre-3.23 package trees.
- *
- * .htaccess 302-redirected `/packages/<old-version>/...` to an external OSN
- * bucket (inventory/htaccess-20260730.conf:65-83). That bucket is being
- * migrated into this one, not redirected to (MIGRATION.md, "The OSN archive
- * moves too") -- so the port is a key fallback, not a redirect. rclone
- * preserves the OSN bucket's own path layout when it lands here, so the R2
- * key is just the request path with `archive.bioconductor.org/` prepended
- * -- the same relative structure the OSN redirects already used, minus the
- * bucket name.
- *
- * Gated on version, not on subpath: the .htaccess rules enumerate specific
- * subpaths (bioc/src/contrib, data/annotation/{src,bin}, workflows/*, ...)
- * because they were added incrementally over years, but the OSN mirror is
- * the whole `packages/<version>/` tree for those releases. Trying the
- * archive key for every subpath under an old version is simpler and no
- * less correct: candidates() only reaches this after the ordinary docroot
- * candidate already missed, so a wrong guess costs one extra R2 op on a
- * genuine 404 and nothing on a hit.
- *
- * "3.23"/"3.24" are hardcoded the same way rsync-filter hardcodes them for
- * checkResults/ -- the pair moves together at the next release, and this
- * is the same one-line edit either way.
- */
-/**
  * Prefix the OSN archive lands under in R2. Contingent on the transfer in the
  * "migrate the OSN archive" issue, which has not run -- until it does, this
  * fallback costs one extra R2 lookup on a request that was going to 404
@@ -228,6 +203,27 @@ export function contentType(key: string): string {
   const last = key.slice(key.lastIndexOf("/") + 1);
   const dot = last.lastIndexOf(".");
   return TYPES[dot > 0 ? last.slice(dot + 1).toLowerCase() : ""] ?? "text/html; charset=utf-8";
+}
+
+/**
+ * Query string for logging: no leading `?`, and bounded.
+ *
+ * Bounded is the load-bearing part. Analytics Engine caps the total size of a
+ * datapoint's blobs, and an oversized write is rejected -- the same silent
+ * data loss that cost us the whole IP-range field on the v1 dataset. A query
+ * string is attacker-controlled and unbounded, so without a cap one crawler
+ * sending a multi-kilobyte query would stop the *entire request* from being
+ * logged, blinding exactly the analysis this field exists to support.
+ *
+ * The documented cap is 16 KB across all blobs in a data point, so 256 is not
+ * near it -- the bound is chosen for signal, not headroom. A real UTM set runs
+ * ~100 chars, so 256 keeps every legitimate query intact while making a
+ * deliberately huge one cheap to store and obvious in the data. Truncation is
+ * marked so a clipped value is never mistaken for a complete one.
+ */
+export function logQuery(search: string, max = 256): string {
+  const q = search.startsWith("?") ? search.slice(1) : search;
+  return q.length <= max ? q : q.slice(0, max) + "...[truncated]";
 }
 
 /**
