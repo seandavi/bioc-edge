@@ -28,11 +28,10 @@ BUCKET=${BUCKET:-bioc-site}
 DEST=${DEST:-mirror}
 HOST=${HOST:-bioc-dev.cancerdatasci.org}
 ZONE=${ZONE:-cancerdatasci.org}
-# Excluded from the rsync pull. LoriTempToRemove/ is 6.1 GB / 2,701 files of
-# abandoned staging in the docroot -- the name is upstream's, not ours.
-# checkResults/ is the open one: 2,607,459 files (70% of all objects) for 38 GB,
-# regenerated daily, and robots.txt already disallows it. See MIGRATION.md.
-RSYNC_EXCLUDE=${RSYNC_EXCLUDE:-LoriTempToRemove/}
+# What the pull includes, as rsync filter rules. Kept in a file rather than
+# inline because it is the scope decision, not a tuning knob -- see the header
+# of ./rsync-filter for what is dropped and what it costs.
+RSYNC_FILTER=${RSYNC_FILTER:-$(dirname "$0")/rsync-filter}
 # Purge-by-URL takes 30 URLs per call and is the only targeted option below
 # Enterprise. Past this many changes it is fewer API calls to purge the zone
 # and let the edge refill from R2 -- egress is free and Class B is $0.36/M.
@@ -92,8 +91,9 @@ if [[ -n ${RSYNC_SRC:-} ]]; then
   # exactly what `rclone --files-from` wants. Splitting on `|` is safe: no path
   # in the docroot contains one (inventory/README.md, "Access notes").
   mkdir -p "$DEST"
+  [[ -f $RSYNC_FILTER ]] || { echo "no filter file at $RSYNC_FILTER" >&2; exit 1; }
   rsync -a --delete --out-format='%i|%n' \
-    ${RSYNC_EXCLUDE:+--exclude="$RSYNC_EXCLUDE"} \
+    --filter="merge $RSYNC_FILTER" \
     ${DRY_RUN:+--dry-run} \
     "$RSYNC_SRC" "$DEST/" > "$log"
 

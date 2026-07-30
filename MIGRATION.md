@@ -88,12 +88,50 @@ Two things fall out of this that were not visible from the HTTP crawl:
 
 - **`checkResults/` is 70% of all objects for 8% of the bytes**, and it regenerates
   nightly. R2 bills per operation, so object count — not size — is what a build-driven
-  sync costs. `robots.txt` already disallows it and it is build telemetry rather than
-  published content, so **excluding it should be the default and hosting it the argued
-  exception.** Unresolved: build reports are genuinely useful to maintainers.
+  sync costs. **Decided: keep the current release and devel only** (`rsync-filter`).
+  That is 251,078 files / 3.04 GB kept and 2,356,377 dropped, taking the whole docroot
+  from 3.71M objects to 1.35M — a 64% cut in the thing that actually drives cost.
+
+  Worth knowing how that breaks down, because the intuitive version of this decision is
+  wrong. Dated historical snapshots are only 618,420 files; the bulk is each *past
+  release's own* `*-LATEST`, 1.65M files across 3.13–3.22. So "drop the old dated
+  snapshots, keep every LATEST" sounds like the moderate option but saves just 24% and
+  leaves 1.9M objects. The saving only arrives by dropping past releases' current
+  reports too.
+
+  Consequence to accept deliberately: a build report for BioC 3.19 will 404. `robots.txt`
+  already disallows `/checkResults/` so nothing is de-indexed, but maintainers do follow
+  these links. Widening scope is a one-line edit to `rsync-filter` if that proves wrong.
 - **`LoriTempToRemove/`** is 6.1 GB of abandoned staging sitting in the live docroot. The
-  name is upstream's. Excluded in `sync.sh`; worth reporting alongside the `sitemap.xml`
-  bug.
+  name is upstream's. Excluded in `rsync-filter`; worth reporting alongside the
+  `sitemap.xml` bug.
+
+### The OSN archive moves too
+
+**Decided: migrate, not redirect.** 340,036 objects / 4.66 TB at
+`osn-bioc:bir190004-bucket01/archive.bioconductor.org/packages`, holding the source
+tarballs for releases 1.8–3.22 — those releases have HTML, vignettes and manuals on
+the upstream docroot host but no tarballs, and `.htaccess:66-83` 302s out to OSN for them.
+
+This is the expensive call: $69.88/month, 91% of the total bill, for content that is
+already hosted and already free to serve. What it buys is that the migration stops
+depending on an external bucket staying available and staying anonymous-readable. A
+302 to someone else's grant-funded storage is a dependency the redirect makes invisible
+and the migration would inherit permanently.
+
+Two consequences that are easy to miss:
+
+- **The `.htaccess` OSN rules stop being redirects and become ordinary keys.** They still
+  have to be handled — the URL layout under `/packages/N.N/bioc/src/contrib/` must map
+  onto wherever these land in the bucket — but as key mapping, not as 302s. That changes
+  the shape of the redirect port, so it is not simply 18 fewer rules.
+- **The transfer is 4.66 TB through this host.** OSN and R2 are different providers, so
+  rclone streams rather than doing a server-side copy. This is a one-time job to plan
+  deliberately, not something to kick off inside a sync run.
+
+Unlike the docroot, this content is genuinely immutable — version-stamped archive
+tarballs that never change — so after the initial load it needs no ongoing sync, and
+`cacheControl()` already marks version-stamped archives `immutable`.
 
 ### Symlinks are broader than assumed
 
@@ -531,17 +569,28 @@ R2, current list price:
 | Class B (reads, cache misses only) | $0.36 / million | 10 million |
 | Egress | free | — |
 
-Storage is negligible at any plausible site size — 500 GB is $7.50/month. Class B is
-charged only on Cloudflare cache misses, so a correct cache rule keeps it near zero.
-Class A spikes once during the initial load; batch it rather than syncing hourly while
-still tuning.
+Class B is charged only on Cloudflare cache misses, so a correct cache rule keeps it near
+zero. Class A spikes once during the initial load; batch it rather than syncing hourly
+while still tuning.
+
+Now measurable rather than estimated, from the 2026-07-30 inventory and the scope
+decisions below:
+
+| Source | Objects | Size | Storage / month |
+|---|---|---|---|
+| Docroot, after `rsync-filter` | 1,354,223 | 453 GB | $6.80 |
+| OSN archive (decision: migrate) | 340,036 | 4,658 GB | $69.88 |
+| **Total** | **1,694,259** | **5,111 GB** | **$76.68** |
+
+One-time Class A on initial load: ~1.7M writes, $7.62.
 
 The Cloudflare zone itself can sit on the Free plan. The real variable is Workers: the
 free tier is 100k requests/day, well under current traffic, so instrumentation means
 Workers Paid at $5/month plus $0.30/million beyond 10M.
 
-Expect single-digit to low-tens of dollars per month. **Confirm against a measured object
-count and total size from the phase 1 survey crawl before quoting a number to anyone.**
+**So roughly $80–85/month**, and the OSN archive is 91% of it. That is the number to
+sanity-check against what the current EBS volume and CloudFront actually cost, because
+this migration is being argued on reliability rather than price.
 
 ## Absolute URLs
 

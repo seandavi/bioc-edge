@@ -72,4 +72,38 @@ pull
 expect "no-op" up
 expect "no-op" gone
 
+# 7. The scope filter. rsync filter rules are order-sensitive and fail quietly
+#    in both directions -- dropping wanted content, or silently pulling 2.3M
+#    unwanted objects. Build the real directory shapes and assert both sides.
+filt=$(dirname "$(readlink -f "$0")")/rsync-filter
+[[ -f $filt ]] || { echo "FAIL no rsync-filter next to this script"; exit 1; }
+
+f=$t/f; mkdir -p "$f/src" "$f/dst"
+mkdir -p "$f/src/checkResults/3.23/bioc-LATEST" "$f/src/checkResults/3.23/books-LATEST" \
+         "$f/src/checkResults/3.24/bioc-LATEST" "$f/src/checkResults/3.20/bioc-LATEST" \
+         "$f/src/checkResults/3.11/bioc-20201017" "$f/src/LoriTempToRemove" \
+         "$f/src/packages/3.23/bioc/html" "$f/src/help"
+echo x > "$f/src/checkResults/3.23/bioc-LATEST/pkg.html"
+echo x > "$f/src/checkResults/3.23/books-LATEST/b.html"
+echo x > "$f/src/checkResults/3.24/bioc-LATEST/dev.html"
+echo x > "$f/src/checkResults/3.20/bioc-LATEST/old.html"
+echo x > "$f/src/checkResults/3.11/bioc-20201017/dated.html"
+echo x > "$f/src/LoriTempToRemove/junk.txt"
+echo x > "$f/src/packages/3.23/bioc/html/DESeq2.html"
+echo x > "$f/src/help/index.html"
+ln -s 3.23 "$f/src/checkResults/release"
+ln -s 3.24 "$f/src/checkResults/devel"
+
+rsync -a --delete --filter="merge $filt" "$f/src/" "$f/dst/" >/dev/null
+got=$(cd "$f/dst" && find . \( -type f -o -type l \) -printf '%P\n' | sort)
+want=$(printf '%s\n' \
+  checkResults/3.23/bioc-LATEST/pkg.html \
+  checkResults/3.23/books-LATEST/b.html \
+  checkResults/3.24/bioc-LATEST/dev.html \
+  checkResults/devel \
+  checkResults/release \
+  help/index.html \
+  packages/3.23/bioc/html/DESeq2.html | sort)
+[[ $want == "$got" ]] || { echo "FAIL scope filter"; diff <(echo "$want") <(echo "$got"); exit 1; }
+
 echo "ok"
