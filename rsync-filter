@@ -39,5 +39,16 @@
 - /LoriTempToRemove/***
 
 # --- rsync/filesystem noise --------------------------------------------------
-- /lost+found/
+#
+# Unanchored: there is a lost+found under packages/ as well as at the root, and
+# the rsync user cannot read either, so anchoring to / just moves the
+# permission-denied error rather than removing it.
+- lost+found/
 - .*.??????
+
+# Seven 2013 course-material files are unreadable by the rsync user
+# (help/course-materials/2013/EMBOBGI/...). Deliberately NOT excluded: they
+# return 403 from the live site too, so Apache cannot read them either. The
+# mirror loses nothing, and leaving them to error keeps the condition visible
+# rather than silently normalising an upstream permissions bug. Reported in
+# the upstream-findings issue.
