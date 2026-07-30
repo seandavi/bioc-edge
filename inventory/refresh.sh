@@ -24,4 +24,10 @@ rclone lsf -R --fast-list --format sp --separator $'\t' \
   | gzip > "osn-archive-$TS.tsv.gz"
 ln -sf "osn-archive-$TS.tsv.gz" osn-archive-latest.tsv.gz
 
-echo "wrote $OUT/docroot-$TS.txt.gz $OUT/osn-archive-$TS.tsv.gz"
+# .htaccess is the de-facto Worker spec -- 92 RewriteRule, 51 RedirectMatch,
+# plus the Cache-Control and Expires directives. Snapshot it next to the repo
+# copy so a drift is visible as a diff rather than a surprise at cutover.
+rsync -a "${SRC%.}.htaccess" "$OUT/htaccess-$TS.conf" 2>/dev/null &&
+  ln -sf "htaccess-$TS.conf" htaccess-latest.conf
+
+echo "wrote $OUT/docroot-$TS.txt.gz $OUT/osn-archive-$TS.tsv.gz $OUT/htaccess-$TS.conf"
