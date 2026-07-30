@@ -496,9 +496,27 @@ argue against. The HEAD-per-object problem is about comparing millions of *exist
 destination objects; against a near-empty bucket the destination listing is 507 entries
 and the comparison is free. It also deletes the orphans, which is the point.
 
+**But the obvious command is dangerous, and this plan originally contained it.** The
+docroot lives at the bucket root, so `rclone sync ./mirror r2:bioc-site` treats every key
+not present locally as an orphan — including the whole `archive.bioconductor.org/` prefix,
+4.66 TB copied from OSN, which has no local counterpart by design. That one command
+deletes it.
+
+That is the same failure MIRRORS.md warns operators about, written into our own runbook:
+`sync` is delete-by-default, and a prefix absent from the source is not "nothing to do",
+it is "delete everything on the other side".
+
+So the initial load is `finish-load.sh`, which encodes the guards rather than trusting
+anyone to remember them: it refuses while rsync is still running, refuses if the mirror is
+below 95% of the file count the dry run predicted, excludes everything R2 owns from the
+delete scope, dry-runs first and aborts if the deletion count exceeds what the phase-1
+crawl's orphans can explain, types extensionless keys before the sync, and publishes the
+symlink map last.
+
 ```sh
-rclone sync ./mirror r2:bioc-site --checksum --transfers 16   # once, after the first pull
-RSYNC_SRC=$RSYNC_SRC ./sync.sh                     # every run after that
+./finish-load.sh                            # dry run, changes nothing
+APPLY=1 ./finish-load.sh                    # once, after the first pull
+RSYNC_SRC=$RSYNC_SRC ./sync.sh   # every run after that
 ```
 
 **Not yet settled:** whether the hourly pull should walk the whole docroot at all. rsync
