@@ -525,6 +525,58 @@ free. If that proves too slow, the split is by cadence — `packages/` hourly,
 `checkResults/` (if included at all) nightly, the static site on its own — via separate
 `RSYNC_SRC` invocations against subtrees.
 
+## Building the site from source
+
+Everything above treats master's docroot as the source. The static half of it is
+*generated*, from `github.com/Bioconductor/bioconductor.org` — a nanoc site built by
+`rake`. So: could CI build that and push straight to R2, making the site reproducible from
+git rather than "whatever Apache happens to be serving"?
+
+**Worth doing for the static site alone, as a second source alongside the rsync pull. Not
+a replacement for any part of it.** Findings from reading the upstream repo, 2026-07-30:
+
+- **The shape already exists and is switched off.** `.github/workflows/staging.yaml` is
+  `setup-ruby 2.6.5 → bundle install → rake → push output/ to S3`, and R2 speaks S3, so
+  the deploy step is a swap. But all four workflows (`staging`, `pr_deploy`, `linter`,
+  `pr_close`) are `disabled_manually` and report **zero runs**; `staging.yaml` only
+  triggers on branch `redesign2023` regardless. This is a leftover from the 2023 redesign,
+  not a pipeline in service — assume it does not build until it has. First thing to check
+  is the pinned Ruby 2.6.5 on `ubuntu-latest`; the repo's `Dockerfile` (`ruby:2.6.5`, with
+  apt sources rewritten to archived Debian buster) sidesteps that if setup-ruby dropped it.
+- **It covers ~1% of the bytes.** The repo is ~100 MB; a `rake` produces site HTML, assets,
+  and package landing pages. Not `packages/` (417.5 GB), not `checkResults/` (38.3 GB),
+  not the course-material media under `help/` (22.0 GB), not `books/`, not the OSN archive
+  — all build-system output that only ever arrives by rsync. This complements `sync.sh`;
+  it does not shrink its scope.
+- **`rake` on its own does not build the package pages either.** `assets/packages/json` is
+  not committed. Regenerating it (`rake get_json`) pulls
+  `master.bioconductor.org/packages/<version>/<repo>/VIEWS` over HTTP *and* runs
+  `git archive --remote=ssh://git@git.bioconductor.org/packages/biocViews` for
+  `biocViewsVocab.sqlite`. Separately, `lib/helpers.rb` reads a `../manifest` sibling
+  checkout (`git.bioconductor.org/admin/manifest`) for the latest-packages listings. So a
+  CI build still reaches into Bioconductor infrastructure — it trades rsync credentials
+  for SSH credentials rather than removing a dependency. (The upstream README says this
+  step runs R against biocViews and rjson; the current `scripts/get_json.rb` is pure Ruby
+  over HTTP + git. The README is stale.)
+- **The build is not hermetic, and it fails soft.** `rake` fetches live from
+  support.bioconductor.org, NCBI eutils, cran.rstudio.com, `bioconductor.org/checkResults/`,
+  the SPB on staging, and the GitHub API (needs `GITHUB_TOKEN`). `lib/helpers.rb` rescues
+  those failures and logs them rather than failing the build, so a degraded run emits a
+  smaller, quietly incomplete site. Publishing that overwrites good content with bad.
+  Any CI push needs a byte/file-count floor before it is allowed to touch the bucket —
+  the same gate `finish-load.sh` applies to the initial load.
+- **Never `rclone sync` from a CI runner at the bucket root.** The runner's `output/` is a
+  strict subset of the bucket *by construction, on every run* — it has no local
+  counterpart for `packages/`, `checkResults/`, or `archive.bioconductor.org/`. That is
+  §The first load is not a delta again, except structural rather than one-off. Use `copy`,
+  or a `sync` scoped to the prefixes nanoc actually owns.
+- **Symlinks still have to be published.** `post_compile` creates `packages/release` and
+  `packages/devel` as symlinks; R2 has none and the Worker resolves `_symlinks.json`. A CI
+  upload has to merge into that map, not ignore it.
+
+If built, this is the "static site on its own" leg of the cadence split left open in
+§Incremental sync — a separate path with its own guards, not another `RSYNC_SRC`.
+
 ## Serving
 
 Custom domain on the bucket, not `r2.dev` — `r2.dev` is rate-limited, non-production, and
@@ -817,6 +869,7 @@ migration unless closed separately.
 - Package landing page freshness. Nightly re-crawl is the near-term answer; sub-daily
   depends on the Our Universe API integration.
 - The build itself. staging still builds hourly; this plan only changes where the output
-  is published.
+  is published. Building the static site in CI instead is scoped in §Building the site
+  from source — an addition, not a replacement.
 - Content that no page links to. Without a sitemap, an unlinked file is invisible to the
   crawl. Fixing `sitemap.xml` upstream would close this gap.
