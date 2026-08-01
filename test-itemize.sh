@@ -128,4 +128,38 @@ want=$(printf '%s\n' \
   some.dir/README | sort)
 [[ $want == "$got" ]] || { echo "FAIL extensionless split"; diff <(echo "$want") <(echo "$got"); exit 1; }
 
+# 9. rsync exit codes. 23 (unreadable) and 24 (vanished) are the normal case
+#    against a live docroot, not failures -- a dozen upstream files have been
+#    unreadable for years. Under `set -e` an unhandled 23 aborts the caller the
+#    moment rsync returns, so the whole sync silently degrades into a pull that
+#    uploads nothing. A real run did exactly that for 21 minutes.
+u=$t/u; mkdir -p "$u/src" "$u/dst"
+echo readable > "$u/src/ok.txt"
+echo secret   > "$u/src/locked.txt"
+chmod 000 "$u/src/locked.txt"
+
+set +e
+rsync -a --out-format='%i|%n' "$u/src/" "$u/dst/" > "$u/log" 2> "$u/err"
+rc=$?
+set -e
+
+if [[ $EUID -eq 0 ]]; then
+  note="running as root, which can read mode-000 files"
+  echo "  SKIP unreadable-source exit code ($note)"
+else
+  [[ $rc -eq 23 ]] || { echo "FAIL expected rsync exit 23 for an unreadable source, got $rc"; exit 1; }
+  # The readable file must still transfer -- a partial failure is not a total one.
+  [[ -f $u/dst/ok.txt ]] || { echo "FAIL readable file did not transfer alongside the unreadable one"; exit 1; }
+  # And the itemize output must still be usable, since it drives everything downstream.
+  grep -q '^>f.*|ok.txt$' "$u/log" || { echo "FAIL itemize output missing the transferred file"; exit 1; }
+fi
+
+# The policy sync.sh applies: 0/23/24 continue, anything else aborts.
+for code in 0 23 24; do
+  case $code in 0|23|24) ;; *) echo "FAIL $code should be tolerated"; exit 1 ;; esac
+done
+for code in 1 12 30; do
+  case $code in 0|23|24) echo "FAIL $code should abort"; exit 1 ;; *) ;; esac
+done
+
 echo "ok"
