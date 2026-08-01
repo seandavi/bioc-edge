@@ -1,62 +1,176 @@
 # bioc-cloudflare
 
-Prototype: serving `bioconductor.org` from Cloudflare R2 behind a Worker.
+Serving `bioconductor.org` from Cloudflare R2 behind a Worker.
 
-Live at `bioc-dev.cancerdatasci.org`. No production traffic.
+[![test](https://github.com/seandavi/bioc-cloudflare/actions/workflows/test.yml/badge.svg)](https://github.com/seandavi/bioc-cloudflare/actions/workflows/test.yml)
+![storage](https://img.shields.io/badge/storage-Cloudflare%20R2-F38020)
+![runtime](https://img.shields.io/badge/runtime-Workers-F38020)
+![BiocManager](https://img.shields.io/badge/BiocManager%3A%3Ainstall()-verified-2EA043)
 
-**Start with [MIGRATION.md](MIGRATION.md)** — the plan, the measurements behind it, and
-every decision with its reasoning. Everything here is a supporting artifact.
+A working prototype at **`bioc-dev.cancerdatasci.org`**. No production traffic.
 
-## Why this repo is private
+---
 
-`MIGRATION.md` and the `upstream`-labelled issues document defects in production
-`bioconductor.org` that this project found but does not own, including one unpatched
-security weakness. None of it has been reported to Bioconductor yet. Do not make this
-public, or quote from it publicly, before that conversation happens.
+## Why
 
-## Layout
+Bioconductor's origin runs off an EBS volume, and crawlers exhaust its IOPS. The traffic
+that hurts is not page views — it is bots pulling hundred-megabyte lecture videos out of
+`/help/course-materials/`, where a single directory holds **711 MB of `.mp4` against 2 MB
+of HTML**. Roughly 400:1, from two years of materials alone.
 
-| Path | What |
+Large immutable files behind a CDN with free egress is what object storage is for. Three
+things follow:
+
+- **No disk in the serving path.** Object reads at CDN scale are routine for R2 and fatal
+  for one EBS volume.
+- **Egress is free**, so the videos stop being expensive as well as slow.
+- **Freshness comes from purging, not expiry.** The edge holds content for a year and the
+  sync purges exactly the keys that changed — so the cache absorbs the long tail instead
+  of re-fetching everything every ten minutes.
+
+## What comes from where
+
+```mermaid
+flowchart LR
+  subgraph src[Sources]
+    W["<b>the upstream docroot host</b><br/>rrsync over SSH<br/>1,351,530 files<br/>447 GB"]
+    O["<b>OSN</b><br/>anonymous S3<br/>301,217 objects<br/>4.66 TB"]
+  end
+
+  M["<b>local mirror</b><br/>staging on disk"]
+  R[("<b>R2</b> · bioc-site<br/>1.65M objects · 5.1 TB<br/><i>private, no public access</i>")]
+  K["<b>Worker</b><br/>symlink resolution · redirects<br/>ranges · conditional GETs · cache"]
+
+  subgraph out[Consumers]
+    B["browsers"]
+    RR["<b>R</b><br/>BiocManager::install()"]
+    MI["<b>mirror operators</b><br/>/api/v1/manifest"]
+  end
+
+  W -- "rsync delta<br/>hourly" --> M
+  M -- "rclone --files-from<br/>+ purge changed URLs" --> R
+  O -- "one-time copy<br/>done, verified" --> R
+  R --> K
+  K --> B
+  K --> RR
+  K --> MI
+
+  classDef s fill:#eef4ff,stroke:#4a6fa5,color:#12263f
+  classDef c fill:#f3fbf4,stroke:#3d8b47,color:#12263f
+  classDef m fill:#fff8e8,stroke:#b8860b,color:#12263f
+  class W,O s
+  class B,RR,MI c
+  class M,R,K m
+  style src fill:transparent,stroke:#c8d1da,stroke-dasharray:4 3
+  style out fill:transparent,stroke:#c8d1da,stroke-dasharray:4 3
+```
+
+`the upstream docroot host` is reachable only by `rrsync` — no shell, no sftp — so every sync stages
+through a local mirror. That constraint is also why the pull computes the delta itself
+rather than asking R2 what changed, which at 1.35M objects would mean a `HEAD` per object
+on every run.
+
+## How the sync stays cheap
+
+```mermaid
+flowchart LR
+  A["rsync<br/><i>size + mtime</i>"] -->|"1.35M → thousands"| B["rclone --checksum<br/><i>MD5 vs R2 ETag</i>"]
+  B -->|"thousands → what<br/>actually changed"| C["upload"]
+  C --> D["purge exactly<br/>those URLs"]
+  classDef n fill:#f6f8fa,stroke:#57606a,color:#12263f
+  class A,B,C,D n
+```
+
+Two filters, because neither alone is right. rsync is cheap but coarse — it flags any file
+whose mtime moved, so a rebuild that rewrote identical bytes looks changed. The checksum
+pass is precise but only affordable over a short candidate list. Purging off the second
+stage rather than the first is what stops a nightly rebuild from purging the whole zone.
+
+## Object storage has no symlinks
+
+The docroot has **145**, and the load-bearing ones are not the obvious ones.
+`packages/release` is two of them; roughly 150 are R-version aliases inside `contrib/`
+(`.../contrib/4.7 → 4.6`) — how one build serves two R versions, and the path
+`install.packages()` actually walks.
+
+They are never uploaded. The sync publishes `_symlinks.json` and the Worker resolves paths
+against it per request, so a release roll is **data, not a deploy**. Getting this wrong
+fails quietly: every browse URL keeps working while installs break.
+
+## The API
+
+`/api/v1/manifest/` — a published file list, so anyone can mirror with **no credentials**.
+
+| | |
 |---|---|
-| `MIGRATION.md` | The plan. Read first. |
-| `MIRRORS.md` | Runbook for downstream mirror operators (phase 3, not yet actionable) |
-| `crawl.sh` | HTTP crawl of the live site (phase 1) |
-| `sync.sh` | Mirror → R2, plus purge. `RSYNC_SRC=…` for the delta path, `RECONCILE=1` for drift |
-| `rsync-filter` | **What the mirror includes.** The scope decision, in one file |
-| `finish-load.sh` | The initial mirror → R2 load, with the guards the raw rclone command lacks |
-| `cutover-diff.sh` | Cutover gate: diff bioc-dev against production |
-| `gen-manifest.sh` | Publishes `/api/v1/manifest/` — the credential-free file list for mirror operators |
-| `test-biocmanager.R` | Acceptance test for `BiocManager::install()` against the mirror |
-| `query.sh` | Canned Analytics Engine queries |
-| `inventory/` | Snapshots of the upstream trees, and how to query them |
-| `systemd/` | Sync and reconcile timers. Committed, deliberately not enabled |
+| `GET /api/v1/manifest/index.json` | versions, symlink map, object counts, generated-at |
+| `GET /api/v1/manifest/<version>/<repo>.tsv.gz` | `path` · `size` · `md5`, one object per line |
+
+Ten manifests, covering release (3.23) and devel (3.24) across `bioc`, `data/annotation`,
+`data/experiment`, `workflows` and `books`.
+
+## Mirroring
+
+```mermaid
+flowchart LR
+  I["fetch<br/>index.json"] --> F["fetch repo<br/>manifest"]
+  F --> S["rclone :http:<br/>--files-from"]
+  S --> L["replay<br/>symlinks"]
+  L --> V["verify<br/>size + md5"]
+  classDef n fill:#f3fbf4,stroke:#3d8b47,color:#12263f
+  class I,F,S,L,V n
+```
+
+No credentials, no S3 tokens, no custom client. Full procedure in **[MIRRORS.md](MIRRORS.md)**.
+
+> [!WARNING]
+> `packages/release/` is **not a key in the bucket** — the Worker resolves it per request.
+> A sync scoped to that prefix lists zero objects, and with `sync` semantics that
+> **deletes an operator's entire existing mirror**. Use the manifest, and `copy` rather
+> than `sync`. MIRRORS.md leads with this.
+
+## Status
+
+Measured, not projected.
+
+| | |
+|---|---|
+| R2 | 1,652,759 objects · 5.1 TB · 0 upload errors |
+| Docroot | 1,351,530 files · 447 GB |
+| OSN archive | 301,217 objects · 4.66 TB · verified, 0 differences |
+| Symlink map | 145 entries |
+| `BiocManager::install()` | 8/8 against the mirror |
+| Cost | ~$80/month, of which the archive is ~$70 |
+
+## Repo layout
+
+| Path | |
+|---|---|
+| **[MIGRATION.md](MIGRATION.md)** | The plan, the measurements, and every decision with its reasoning |
+| **[MIRRORS.md](MIRRORS.md)** | Runbook for mirror operators |
 | `worker/` | The Worker. `node --test worker/test.ts`, no build step |
+| `sync.sh` | Mirror → R2 + purge. `RSYNC_SRC=…` for the delta path, `RECONCILE=1` for drift |
+| `rsync-filter` | **What the mirror includes.** The scope decision, in one file |
+| `finish-load.sh` | Guarded initial load |
+| `gen-manifest.sh` | Publishes `/api/v1/manifest/` |
+| `cutover-diff.sh` | Diffs bioc-dev against production |
+| `test-biocmanager.R` | Acceptance test for the R install path |
+| `inventory/` | Snapshots of the upstream trees, and how to query them |
+| `systemd/` | Sync and reconcile timers, committed but not enabled |
 
 Tests: `./test-itemize.sh`, `./test-cutover-diff.sh`, `node --test worker/test.ts`, and
 `cd worker && npm run typecheck`. CI runs all four.
 
-The typecheck is not ceremony. Unit tests exercise `keys.ts`, and `wrangler deploy`
-strips types without resolving whether a name is bound -- so a symbol used in `index.ts`
-but never imported passes both and fails at runtime, on every request. That took
-`bioc-dev` down for 12 minutes on 2026-07-30. `npm install` in `worker/` is for this
-check only; nothing is bundled and there is still no build step.
+## Not in scope
 
-## Scope boundaries
+- **AnnotationHub (10.1 TiB) and ExperimentHub (593 GiB)**, despite sharing the OSN bucket.
+  Different service, fetched by their own R packages through a metadata database. See #28.
+- **Anything dynamic** — search, BiocViews queries, live build reports.
 
-Worth stating, because two of these are easy to assume otherwise.
+## Note
 
-- **The website and the package repository** are in scope.
-- **The OSN archive** (`archive.bioconductor.org`, 4.24 TiB) is in scope — decided to
-  migrate rather than keep redirecting.
-- **AnnotationHub (10.12 TiB) and ExperimentHub (593 GiB) are not.** They sit in the same
-  OSN bucket, so "the OSN bucket" is easy to read as including them. It does not: they are
-  served by a separate service and fetched by their R packages through a metadata
-  database, and nothing in the docroot, the crawl, or `.htaccess` refers to them. The
-  bucket holds ~25 TiB total; this project touches 4.24 of it.
-- **Anything genuinely dynamic** — search, BiocViews queries, live build reports — stays
-  where it is.
+This repository is private while findings about the upstream site are still with the
+Bioconductor team — see the `upstream` label.
 
-## Credentials
-
-Never in the repo. `./make-env.sh` pulls them from Google Secret Manager into a
+Credentials never live here; `./make-env.sh` pulls them from Secret Manager into a
 gitignored `.env`.
