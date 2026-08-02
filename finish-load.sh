@@ -70,9 +70,15 @@ log=finish-load-$(date +%Y%m%dT%H%M%S).log
 echo "--- dry run"
 rclone sync "$DEST" "r2:$BUCKET" "${PROTECT[@]}" --checksum --dry-run \
   --log-level INFO --log-file "$log" --transfers 16 --checkers 32
+# rclone words a dry run differently from a real one -- uploads log as
+# "Skipped copy as --dry-run is set", not "Copied" -- so matching only the
+# real-run wording reports zero uploads for a run that would transfer
+# everything. Count both, and prefer rclone's own summary line when present.
 dels=$(grep -c 'Skipped delete' "$log" 2>/dev/null || true)
-ups=$(grep -cE ': (Copied|Updated)' "$log" 2>/dev/null || true)
+ups=$(grep -cE ': (Copied|Updated)|Skipped copy as' "$log" 2>/dev/null || true)
+summary=$(grep -oE 'Transferred:[[:space:]]+[0-9]+ / [0-9]+' "$log" | tail -1 || true)
 echo "would upload $ups, delete $dels (log: $log)"
+[[ -n $summary ]] && echo "  rclone summary: $summary"
 
 if (( dels > MAX_DELETES )); then
   echo "refusing: $dels deletions exceeds MAX_DELETES=$MAX_DELETES." >&2

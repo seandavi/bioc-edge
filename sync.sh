@@ -32,10 +32,25 @@ ZONE=${ZONE:-cancerdatasci.org}
 # inline because it is the scope decision, not a tuning knob -- see the header
 # of ./rsync-filter for what is dropped and what it costs.
 RSYNC_FILTER=${RSYNC_FILTER:-$(dirname "$0")/rsync-filter}
-# Purge-by-URL takes 30 URLs per call and is the only targeted option below
-# Enterprise. Past this many changes it is fewer API calls to purge the zone
-# and let the edge refill from R2 -- egress is free and Class B is $0.36/M.
-PURGE_MAX=${PURGE_MAX:-300}
+# Purge-by-URL is the only targeted option below Enterprise. Cloudflare allows
+# 100 URLs per request and 800 URLs/second account-wide on Free, so 786 URLs --
+# a measured day of build output -- is 8 requests and about one second of rate
+# budget. Nothing like a constraint.
+#
+# The old ceiling of 300 came with a rationale written when this bucket held
+# 507 objects: past a few hundred changes, purging the zone was fewer API calls
+# than purging each URL. That reasoning does not survive the bucket growing to
+# 1.65M objects. A zone purge now discards the entire edge cache, so every one
+# of those objects refills from R2 on next request -- and the cache is the
+# whole point of the architecture, not an optimisation on top of it.
+#
+# 10,000 is 100 requests and ~13 seconds of rate budget. Past that a zone purge
+# genuinely is simpler, and a change that large should have a human attached
+# anyway -- a release roll drops ~129k objects in one run.
+PURGE_MAX=${PURGE_MAX:-10000}
+# 100 is the documented per-request maximum on Free/Pro/Business (500 on
+# Enterprise). This was 30, which tripled the request count for no reason.
+PURGE_BATCH=${PURGE_BATCH:-100}
 
 [[ -n ${RSYNC_SRC:-} || -d $DEST ]] ||
   { echo "no mirror at $DEST -- run ./crawl.sh site first" >&2; exit 1; }
@@ -92,10 +107,30 @@ if [[ -n ${RSYNC_SRC:-} ]]; then
   # in the docroot contains one (inventory/README.md, "Access notes").
   mkdir -p "$DEST"
   [[ -f $RSYNC_FILTER ]] || { echo "no filter file at $RSYNC_FILTER" >&2; exit 1; }
+  # rsync's exit code needs interpreting, not trusting. 23 means "some files
+  # could not be transferred" and 24 means "some vanished before transfer" --
+  # both are *normal* against a live docroot that is being rebuilt underneath
+  # us, and 23 is permanent here: a dozen upstream files have been unreadable
+  # since before this project started (they 403 from production too).
+  #
+  # Under set -e an unhandled 23 aborts the script the instant rsync returns,
+  # so nothing after this point runs: no upload, no deletion, no symlink map,
+  # no purge. The delta sync would fail on every run while looking like it
+  # merely had a warning. Measured: a real run exited 23 after 21 minutes
+  # having done nothing but the pull.
+  set +e
   rsync -a --delete --out-format='%i|%n' \
     --filter="merge $RSYNC_FILTER" \
     ${DRY_RUN:+--dry-run} \
-    "$RSYNC_SRC" "$DEST/" > "$log"
+    "$RSYNC_SRC" "$DEST/" > "$log" 2> "$log.err"
+  rc=$?
+  set -e
+  case $rc in
+    0) ;;
+    23|24) echo "rsync exit $rc: $(grep -c 'Permission denied\|vanished' "$log.err" || true) files skipped (unreadable or vanished) -- see $log.err" ;;
+    *) echo "rsync failed, exit $rc -- aborting before touching R2" >&2
+       tail -3 "$log.err" >&2; exit $rc ;;
+  esac
 
   # `>f` = file content received. This is a *superset* of what R2 needs, and
   # the difference is not academic: rsync's quick check is size+mtime, so a
@@ -168,6 +203,15 @@ if [[ -n ${RSYNC_SRC:-} ]]; then
   fi
   echo "$(jq 'length' < "$links") symlinks mapped"
 
+  # Regenerate the mirror manifest. Without this the published file list keeps
+  # describing whatever the last full load saw, so operators sync a stale set:
+  # missing new packages, fetching deleted ones, failing hashes on updated
+  # ones. ~72 LIST ops per run, about $0.23/month -- not worth making
+  # conditional on whether packages/ happened to change.
+  if [[ -z ${DRY_RUN:-} ]]; then
+    "$(dirname "$0")/gen-manifest.sh" || echo "WARNING: manifest regeneration failed; the published one is now stale" >&2
+  fi
+
   # Purge what rclone actually wrote, not what rsync offered. Using the
   # candidate list here would purge thousands of URLs for a handful of real
   # changes -- and blow past PURGE_MAX into a full zone purge most nights.
@@ -215,8 +259,8 @@ if ((${#changed[@]} > PURGE_MAX)); then
 else
   urls=()
   for k in "${changed[@]}"; do urls+=("https://$HOST/$k"); done
-  for ((i = 0; i < ${#urls[@]}; i += 30)); do
-    purge_body "$(jq -nc --args '{files: $ARGS.positional}' "${urls[@]:i:30}")"
+  for ((i = 0; i < ${#urls[@]}; i += PURGE_BATCH)); do
+    purge_body "$(jq -nc --args '{files: $ARGS.positional}' "${urls[@]:i:PURGE_BATCH}")"
   done
   echo "purged ${#urls[@]} urls"
 fi

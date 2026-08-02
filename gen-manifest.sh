@@ -23,7 +23,8 @@ set -euo pipefail
 
 BUCKET=${BUCKET:-bioc-site}
 PREFIX=${PREFIX:-api/v1/manifest}
-DEST=${DEST:-/data/davsean/bioc-cloudflare/mirror}
+HOST=${HOST:-bioc-dev.cancerdatasci.org}
+ZONE=${ZONE:-cancerdatasci.org}
 # Repos a mirror would carry. Keys are bucket paths; the manifest filename
 # flattens the slash so data/annotation becomes data-annotation.tsv.gz.
 REPOS=${REPOS:-bioc data/annotation data/experiment workflows books}
@@ -117,6 +118,32 @@ if [[ -z ${DRY_RUN:-} ]]; then
   rclone rcat "r2:$BUCKET/$PREFIX/index.json" < "$idx" \
     --header-upload "Content-Type: application/json"
   echo "published $PREFIX/index.json (${#emitted[@]} manifests)"
+
+  # Purge, or nobody sees any of this. cacheControl() gives every key
+  # s-maxage=31536000, so freshness comes from purge-on-publish and never from
+  # expiry -- exactly as for content. Skipping it here meant the edge served a
+  # 21-hour-old test manifest naming the wrong release, and would have kept
+  # doing so for a year. Same failure as the octet-stream that stuck on
+  # /packages/plyranges during the POC.
+  urls=("https://$HOST/$PREFIX/index.json")
+  for e in "${emitted[@]}"; do urls+=("https://$HOST/$PREFIX/${e%%:*}.tsv.gz"); done
+  api="https://api.cloudflare.com/client/v4"
+  auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
+  zone_id=$(curl -sS "${auth[@]}" "$api/zones?name=$ZONE" | jq -r '.result[0].id // empty')
+  if [[ -z $zone_id ]]; then
+    echo "WARNING: cannot resolve zone $ZONE -- manifests published but NOT purged." >&2
+    echo "         The edge will serve the previous ones until purged by hand." >&2
+  else
+    # 100 URLs per request is the documented maximum below Enterprise; this
+    # is ~11, so a single request.
+    for ((i = 0; i < ${#urls[@]}; i += 100)); do
+      ok=$(curl -sS -X POST "${auth[@]}" \
+        --data "$(jq -nc --args '{files: $ARGS.positional}' "${urls[@]:i:100}")" \
+        "$api/zones/$zone_id/purge_cache" | jq -r '.success')
+      [[ $ok == true ]] || { echo "purge failed for batch $i" >&2; exit 1; }
+    done
+    echo "purged ${#urls[@]} manifest urls"
+  fi
 else
   echo "--- DRY_RUN, index.json would be:"; jq '{generated, versions, manifests}' "$idx"
 fi
