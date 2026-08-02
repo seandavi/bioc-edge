@@ -7,6 +7,11 @@ worker/dev.log
 worker/tail.json
 sync-*.log
 sync-*.log.*
+finish-load-*.log
+finish-load-*.out
+cutover-diff-*/
+mirror.urls
+*.urls
 inventory/*.gz
 mirror.urls
 mirror.redirects.tsv
