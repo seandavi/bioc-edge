@@ -846,6 +846,41 @@ rather than these two. See §Upstream shape. It also means an HTTP crawl of both
 `/packages/release/` and `/packages/3.24/` would fetch the same bytes twice under two
 paths, which is a further argument for the rsync path over crawling.
 
+## Behavioural equality, not byte identity
+
+The gate asks whether the new site *behaves* like the old one, not whether it emits
+identical bytes. Those come apart in a specific way, and the distinction has to be written
+down or the gate slowly becomes noise.
+
+Production emits some things that are wrong or legacy:
+
+| Path | Production | Here |
+|---|---|---|
+| `*.tar.gz` | `application/x-gzip` | `application/gzip` (RFC 6713) |
+| `/bioc-version`, `/config.yaml` | *no `Content-Type` at all* | `text/plain`, `application/yaml` |
+
+**We emit the correct answer and the gate treats that as passing.** Forcing byte identity
+would mean reproducing a bug in order to satisfy our own check — and a check that fails
+forever on a known-good difference is a check nobody reads.
+
+The policy is asymmetric on purpose, in `ctype_ok()`:
+
+- Documented aliases fold together (`x-gzip` ≡ `gzip`, `application/javascript` ≡
+  `text/javascript`, and so on). Each entry cites the RFC that registered it; the table is
+  not a place to silence a difference nobody has explained.
+- **We supply a type where production supplies none → pass.** That is an improvement.
+- **We supply none where production supplies one → fail.** That is a regression.
+- A genuinely wrong type still fails. `application/octet-stream` against `text/html` is the
+  bug this project already shipped once, and normalising it away would hide the next one.
+
+The same reasoning governs `NORMALIZE_HOST`, which stays **off** by default: absolute URLs
+pointing at the origin hostname are byte differences that may or may not be behavioural
+ones, and switching normalisation on by default would swallow a genuinely wrong link.
+
+Content that legitimately churns — `checkResults/` regenerates continuously — will differ
+between any two snapshots taken minutes apart. That is not drift, and it is why the gate
+reports by kind rather than as a single pass/fail number.
+
 ## Cutover
 
 1. Survey crawl of phase 1. Record object count and total bytes.
