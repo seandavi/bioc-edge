@@ -46,4 +46,4 @@ ln -sf "r2-listing-$TS.tsv.gz" r2-listing-latest.tsv.gz
 rsync -a "${SRC%.}.htaccess" "$OUT/htaccess-$TS.conf" 2>/dev/null &&
   ln -sf "htaccess-$TS.conf" htaccess-latest.conf
 
-echo "wrote $OUT/docroot-$TS.txt.gz $OUT/osn-archive-$TS.tsv.gz $OUT/htaccess-$TS.conf"
+echo "wrote $OUT/docroot-$TS.txt.gz $OUT/osn-archive-$TS.tsv.gz $OUT/r2-listing-$TS.tsv.gz $OUT/htaccess-$TS.conf"
