@@ -63,16 +63,60 @@ NORMALIZE_HOST=${NORMALIZE_HOST:-0}
 UA=${UA:-"bioc-r2-migration/0.1 cutover-diff (seandavi@gmail.com)"}
 OUTDIR=${OUTDIR:-cutover-diff-$(date +%Y%m%dT%H%M%S)}
 
-# norm_ctype: drop parameters (charset etc.) and case. Confirmed live: the
-# Worker sends "text/html; charset=utf-8", Apache sends "text/html" -- same
-# content, different header. A real content-type bug looks like text/html
-# vs application/octet-stream, not a charset param.
+# The gate tests **behavioural equality, not byte identity**. Where this
+# project has deliberately chosen a more correct answer than production, the
+# gate must not report it forever as a failure -- a check that always fails is
+# a check nobody reads. What it must still catch is a regression: us being
+# *worse* than production, or genuinely serving the wrong thing.
+#
+# norm_ctype: drop parameters (charset etc.) and case, then fold documented
+# aliases onto one spelling. Confirmed live: the Worker sends
+# "text/html; charset=utf-8", Apache sends "text/html" -- same content,
+# different header. A real content-type bug looks like text/html vs
+# application/octet-stream, not a charset param or a legacy alias.
+#
+# Every pair below is a genuine synonym with a citation, not a convenience.
+# Do not extend this table to silence a difference you have not explained.
 norm_ctype() {
   local c=${1%%;*}
   c=$(printf '%s' "$c" | tr '[:upper:]' '[:lower:]')
   c="${c#"${c%%[![:space:]]*}"}"
   c="${c%"${c##*[![:space:]]}"}"
+  case $c in
+    # RFC 6713 registered application/gzip; x-gzip is the pre-registration
+    # spelling Apache still emits. R and every browser accept both.
+    application/x-gzip|application/gzip)          c=application/gzip ;;
+    # RFC 9239 made text/javascript the standard; application/javascript and
+    # the x- form are both legacy.
+    application/javascript|application/x-javascript|text/javascript)
+                                                  c=text/javascript ;;
+    # RFC 9512 registered application/yaml.
+    application/x-yaml|text/yaml|text/x-yaml|application/yaml)
+                                                  c=application/yaml ;;
+    # RFC 2361 / IANA: vnd.microsoft.icon is registered, x-icon is the
+    # de facto spelling almost everything sends.
+    image/x-icon|image/vnd.microsoft.icon)        c=image/x-icon ;;
+    application/x-tar|application/tar)            c=application/x-tar ;;
+  esac
   printf '%s' "$c"
+}
+
+# ctype_ok: is the pair acceptable, given that we may legitimately be better?
+#
+# Asymmetric on purpose. Production sends *no* Content-Type at all for
+# /bioc-version, /bioc-devel-version and /config.yaml; we send correct ones.
+# That is an improvement, and forcing byte-identity there would mean
+# reproducing a bug to pass our own gate.
+#
+# The reverse is not acceptable: if we send nothing where production sends a
+# type, we have regressed and the gate must say so.
+ctype_ok() {
+  local dev prod
+  dev=$(norm_ctype "$1"); prod=$(norm_ctype "$2")
+  [[ $dev == "$prod" ]] && return 0
+  # We supply a type where production supplies none: better, not different.
+  [[ $prod == none && $dev != none ]] && return 0
+  return 1
 }
 
 # classify_pair: pure, no I/O -- given what was observed on both origins for
@@ -109,7 +153,7 @@ classify_pair() {
   # correct, not a bug in this script.
   [[ $dev_status == 2* ]] || { echo ok; return; }
 
-  [[ $(norm_ctype "$dev_ctype") == "$(norm_ctype "$prod_ctype")" ]] ||
+  ctype_ok "$dev_ctype" "$prod_ctype" ||
     { echo content_type_mismatch; return; }
 
   if [[ $dev_hashed == 1 && $prod_hashed == 1 ]]; then
@@ -174,7 +218,14 @@ fetch_side() {
   fi
 
   rm -f "$hdr" "$body"
-  printf '%s\t%s\t%s\t%s\n' "${status:-ERR_NO_RESPONSE}" "$ctype" "$hashed" "$digest"
+  # Never emit an empty field. Tab counts as IFS *whitespace*, so bash `read`
+  # collapses a doubled tab into one delimiter and every later field shifts
+  # left -- an absent Content-Type silently turned `hashed` into the ctype and
+  # produced nonsense mismatches like `prod=1`. Production genuinely sends no
+  # Content-Type for /bioc-version, /bioc-devel-version and /config.yaml, so
+  # this is the normal case, not an edge case. NONE also makes "neither side
+  # sent one" compare equal, while "one side did" stays a real mismatch.
+  printf '%s\t%s\t%s\t%s\n' "${status:-ERR_NO_RESPONSE}" "${ctype:-NONE}" "$hashed" "$digest"
 }
 
 main() {
