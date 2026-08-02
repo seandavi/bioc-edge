@@ -11,11 +11,33 @@ snapshots are ~40 MB gzipped) and repoints the `-latest` symlinks.
 |---|---|---|
 | `docroot-<ts>.txt.gz` | `$RSYNC_SRC` (= `the live docroot`, the live docroot) | raw `rsync --list-only`: perms, size, date, time, path |
 | `osn-archive-<ts>.tsv.gz` | `osn-bioc:bir190004-bucket01/archive.bioconductor.org/packages` | `size<TAB>path` |
+| `r2-listing-<ts>.tsv.gz` | `r2:$BUCKET` (the live bucket, ~15 min at 1.65M objects — see the comment in `refresh.sh`) | `path<TAB>size<TAB>md5` |
 
 Findings drawn from these snapshots live in `../MIGRATION.md` (§Upstream shape).
 Keep the numbers there, not here — one place to update after a refresh.
 
-## Querying
+## Query layer
+
+`./db.sh` (or `./db.sh "SELECT ..."`) answers questions across all four
+sources — these snapshots, the live local mirror, and the published manifest
+— in one query instead of a pipeline of separately-run awk. `views.sql` is
+the view layer; its header documents four specific mistakes it exists to
+make structurally impossible (the size `-1` directory row, `du -sh` vs `du
+-sb`, rsync itemize codes read as file counts, rclone's "Transferred: N"
+summary read as `find | wc -l`). Nothing is stored: every view reads a source
+artifact fresh, so if a number looks wrong the fix is re-running `refresh.sh`
+or checking the artifact, never patching a view.
+
+`test-inventory-views.sh` (repo root) pins the parsing logic against
+fixtures, no network required.
+
+## Querying (raw)
+
+The recipes below still work, and are the reference for what each snapshot's
+columns mean — but for anything that reconciles more than one source (what's
+upstream but not local, what's an orphan in R2, ...) use `./db.sh` instead:
+that used to be three bespoke awk scripts run by hand, which is exactly how
+the size `-1` and GiB/GB mistakes documented in `views.sql` happened.
 
 `rsync --list-only` columns are perms, size, date, time, path. Size is
 comma-grouped, and paths can contain spaces, so rebuild the path from `$5..NF`

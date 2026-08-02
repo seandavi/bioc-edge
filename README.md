@@ -155,11 +155,15 @@ Measured, not projected.
 | `gen-manifest.sh` | Publishes `/api/v1/manifest/` |
 | `cutover-diff.sh` | Diffs bioc-dev against production |
 | `test-biocmanager.R` | Acceptance test for the R install path |
-| `inventory/` | Snapshots of the upstream trees, and how to query them |
+| `inventory/` | Snapshots of upstream and R2, plus a DuckDB query layer over both |
+| `inventory/db.sh` | One command for reconciliation queries — see `inventory/views.sql` |
 | `systemd/` | Sync and reconcile timers, committed but not enabled |
 
 Tests: `./test-itemize.sh`, `./test-cutover-diff.sh`, `node --test worker/test.ts`, and
 `cd worker && npm run typecheck`. CI runs all four.
+
+`./test-inventory-views.sh` covers the query layer and is run by hand — it needs `duckdb`,
+which is not on the CI runner.
 
 ## Not in scope
 
