@@ -19,3 +19,4 @@ mirror.targets
 cutover-diff-*/
 docs/_site/
 docs/.quarto/
+.claude/handoffs/
