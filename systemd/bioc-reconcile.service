@@ -4,6 +4,7 @@ Documentation=file:///home/davsean/Documents/git/bioc-cloudflare/systemd/README.
 Conflicts=bioc-sync.service
 After=network-online.target
 Wants=network-online.target
+OnFailure=bioc-notify@%N.service
 
 [Service]
 Type=oneshot

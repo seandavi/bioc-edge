@@ -7,6 +7,13 @@ Two timers, deliberately shipped as a pair.
 | `bioc-sync` | hourly | `RSYNC_SRC=... ./sync.sh` — pull the delta, push what moved, purge those URLs |
 | `bioc-reconcile` | weekly | `RECONCILE=1 ./sync.sh` — `rclone check --checksum`, report drift |
 
+Both carry `OnFailure=bioc-notify@%N.service`, so a failed run files (or comments on)
+a GitHub issue titled `<unit> is failing` via `../notify-failure.sh` — full journal for
+that run plus whatever `sync.sh` log files it left on disk, capped only against
+GitHub's body-size limit. One operator has access to this box, so the body isn't
+trimmed for brevity. `gh` auth already lives in `~/.config/gh` on this host; nothing
+else to provision.
+
 They are a pair because the delta sync is what *creates* the need for reconciliation.
 `RSYNC_SRC` mode trusts rsync's delta and never reads the bucket back, so a failed upload
 diverges silently and permanently. Scheduling the sync without the check would be

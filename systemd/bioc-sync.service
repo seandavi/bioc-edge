@@ -7,6 +7,10 @@ Documentation=file:///home/davsean/Documents/git/bioc-cloudflare/MIGRATION.md
 Conflicts=bioc-reconcile.service
 After=network-online.target
 Wants=network-online.target
+# %N is the unit name with the .service suffix stripped -- bioc-notify@ then
+# appends its own, so the instance is bioc-notify@bioc-sync.service, not a
+# doubled suffix. See bioc-notify@.service and ../notify-failure.sh.
+OnFailure=bioc-notify@%N.service
 
 [Service]
 Type=oneshot
