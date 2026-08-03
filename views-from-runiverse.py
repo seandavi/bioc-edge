@@ -25,6 +25,7 @@ UA = {"User-Agent": "Mozilla/5.0 bioc-cloudflare/views-spike"}
 # itself. r-universe structurally cannot know these; don't count them as failures.
 REPO_ARTIFACT_FIELDS = {
     "MD5sum", "win.binary.ver", "Archs", "Rfiles", "hasINSTALL", "hasLICENSE",
+    "mac.binary.big-sur-x86_64.ver", "mac.binary.sonoma-arm64.ver",
 }
 ROLE2REV = {
     "Depends": "dependsOnMe", "Imports": "importsMe",
@@ -47,7 +48,7 @@ def parse_dcf(text):
                 recs.append(cur)
                 cur, key = {}, None
             continue
-        m = re.match(r"^([A-Za-z_][A-Za-z0-9_.@/]*):\s?(.*)$", line)
+        m = re.match(r"^([A-Za-z_][A-Za-z0-9_.@/-]*):\s?(.*)$", line)
         if m:
             key, cur[m.group(1)] = m.group(1), m.group(2)
         elif key:
