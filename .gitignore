@@ -17,3 +17,5 @@ mirror.urls
 mirror.redirects.tsv
 mirror.targets
 cutover-diff-*/
+docs/_site/
+docs/.quarto/
