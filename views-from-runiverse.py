@@ -117,17 +117,21 @@ def reconstruct(name, p, rev, branch):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bioc", default="3.23", help="Bioconductor version, e.g. 3.23")
-    ap.add_argument("--universe", default="bioc-release", help="r-universe name")
+    ap.add_argument("--universe", default="bioc-release",
+                    help="r-universe name: bioc-release (release) or bioc (devel)")
+    ap.add_argument("--repo", default="bioc",
+                    help="bioc | data/annotation | data/experiment | workflows")
     ap.add_argument("--emit", help="write the reconstructed VIEWS here")
     args = ap.parse_args()
 
-    branch = "RELEASE_" + args.bioc.replace(".", "_")
+    # devel builds off the git default branch; release off the RELEASE_x_y branch.
+    branch = "devel" if args.universe == "bioc" else "RELEASE_" + args.bioc.replace(".", "_")
     print(f"fetching r-universe: {args.universe} ...", file=sys.stderr)
     pkgs = {p["Package"]: p
             for p in json.loads(get(f"https://{args.universe}.r-universe.dev/api/packages"))}
-    print(f"fetching real VIEWS: BioC {args.bioc} ...", file=sys.stderr)
+    print(f"fetching real VIEWS: BioC {args.bioc} {args.repo} ...", file=sys.stderr)
     views = parse_dcf(get(
-        f"https://bioconductor.org/packages/{args.bioc}/bioc/VIEWS").decode("utf-8", "replace"))
+        f"https://bioconductor.org/packages/{args.bioc}/{args.repo}/VIEWS").decode("utf-8", "replace"))
 
     rev = reverse_deps(pkgs)
     built = {n: reconstruct(n, p, rev, branch) for n, p in pkgs.items()}
