@@ -145,6 +145,75 @@ export function archiveFallback(key: string, links: Links = {}): string | null {
   return `${ARCHIVE_PREFIX}/${key}`;
 }
 
+/**
+ * Directories the origin autoindexes, as an R2 prefix -- or null.
+ *
+ * Almost nothing in the docroot lists: `citations/`, `html/`, `style/`,
+ * `bin/windows/contrib/4.6/`, even `src/contrib/` itself all 403. Probing
+ * production found only these on (the vhost that sets it is not in
+ * `inventory/`, so this is measured rather than ported):
+ *
+ *   packages/<ver>/<repo>/src/contrib/Archive/         172 package dirs in 3.23
+ *   packages/<ver>/<repo>/src/contrib/Archive/<pkg>/   the archived tarballs
+ *   rss/
+ *
+ * The tarballs under Archive/ were always mirrored -- only the generated page
+ * was missing, so the directory 404'd while the file under it served fine
+ * (issue #59). `<repo>` is one segment (`bioc`) or two (`data/annotation`).
+ *
+ * Scoped deliberately, not generalised to "any directory that misses": the
+ * docroot has ~1.35M of them, and listing all of them would publish that many
+ * crawlable pages the origin does not serve.
+ */
+const LISTABLE = [
+  /^(?:archive\.bioconductor\.org\/)?packages\/[^/]+\/[^/]+(?:\/[^/]+)?\/src\/contrib\/Archive\/(?:[^/]+\/)?$/,
+  /^rss\/$/,
+];
+
+export function listablePrefix(key: string): string | null {
+  if (!key.endsWith("index.html")) return null;
+  const prefix = key.slice(0, -"index.html".length);
+  return LISTABLE.some((re) => re.test(prefix)) ? prefix : null;
+}
+
+const escape = (s: string) =>
+  s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+
+/**
+ * mod_autoindex's output, near enough: a heading and a list of links.
+ *
+ * Links are absolute where Apache's are relative, because this page also
+ * answers the no-trailing-slash form of the URL -- Apache 301s that to the
+ * slash form first, and relative hrefs would resolve one directory too high
+ * without the redirect.
+ *
+ * Size but no date. R2 knows when an object was *uploaded*, which is when this
+ * mirror copied it, not when the builder wrote it -- and a listing of 2019
+ * tarballs all dated last month is worse than one dated not at all.
+ */
+export function renderIndex(
+  prefix: string,
+  dirs: string[],
+  files: { name: string; size: number }[],
+): string {
+  const parent = prefix.replace(/[^/]+\/$/, "");
+  const row = (name: string, href: string, right = "") =>
+    `<li><a href="/${href}">${escape(name)}</a>${right}</li>`;
+  return [
+    "<!DOCTYPE html>",
+    `<html><head><title>Index of /${escape(prefix)}</title></head><body>`,
+    `<h1>Index of /${escape(prefix)}</h1><ul>`,
+    parent ? row("Parent Directory", parent) : "",
+    ...[...dirs].sort().map((d) => row(d + "/", prefix + encodeURIComponent(d) + "/")),
+    ...[...files]
+      .sort((a, b) => (a.name < b.name ? -1 : 1))
+      .map((f) => row(f.name, prefix + encodeURIComponent(f.name), `  ${f.size}`)),
+    "</ul></body></html>",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 /** Shape of worker/src/redirects.json -- see worker/gen-redirects.ts. */
 export interface Redirects {
   exact: Record<string, string>;

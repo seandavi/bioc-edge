@@ -88,6 +88,10 @@ echo x > "$f/src/checkResults/3.23/books-LATEST/b.html"
 echo x > "$f/src/checkResults/3.24/bioc-LATEST/dev.html"
 echo x > "$f/src/checkResults/3.20/bioc-LATEST/old.html"
 echo x > "$f/src/checkResults/3.11/bioc-20201017/dated.html"
+# The landing page. A real file, not an autoindex, and the `- ***` rule dropped
+# it along with the build output -- so /checkResults/ 404'd while everything it
+# links to was present.
+echo x > "$f/src/checkResults/index.html"
 echo x > "$f/src/LoriTempToRemove/junk.txt"
 echo x > "$f/src/packages/3.23/bioc/html/DESeq2.html"
 echo x > "$f/src/help/index.html"
@@ -101,6 +105,7 @@ want=$(printf '%s\n' \
   checkResults/3.23/books-LATEST/b.html \
   checkResults/3.24/bioc-LATEST/dev.html \
   checkResults/devel \
+  checkResults/index.html \
   checkResults/release \
   help/index.html \
   packages/3.23/bioc/html/DESeq2.html | sort)
