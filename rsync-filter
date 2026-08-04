@@ -26,6 +26,10 @@
 # them from _symlinks.json, so they have to survive the filter.
 + /checkResults/release
 + /checkResults/devel
+# The landing page, which is a real file and not an autoindex. Without this the
+# `- ***` below drops it and /checkResults/ 404s even though everything it
+# links to is present.
++ /checkResults/index.html
 + /checkResults/3.23/
 + /checkResults/3.24/
 + /checkResults/3.23/*-LATEST/***

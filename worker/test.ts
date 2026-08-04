@@ -11,6 +11,8 @@ import {
   resolveLinks,
   archiveFallback,
   redirectFor,
+  listablePrefix,
+  renderIndex,
 } from "./src/keys.ts";
 import redirects from "./src/redirects.json" with { type: "json" };
 
@@ -210,6 +212,64 @@ test("no link map means unchanged behaviour", () => {
   // still serve every non-symlinked path exactly as before.
   assert.deepEqual(candidates("/help/faq"), ["help/faq.html", "help/faq/index.html", "help/faq"]);
   assert.equal(resolveLinks("packages/release/bioc", {}), "packages/release/bioc");
+});
+
+test("listablePrefix matches only the directories the origin autoindexes", () => {
+  // Measured against production, not guessed: within packages/ only Archive/
+  // and its per-package subdirectories return 200 on a directory URL.
+  assert.equal(
+    listablePrefix("packages/3.23/bioc/src/contrib/Archive/index.html"),
+    "packages/3.23/bioc/src/contrib/Archive/",
+  );
+  assert.equal(
+    listablePrefix("packages/3.23/bioc/src/contrib/Archive/DelayedArray/index.html"),
+    "packages/3.23/bioc/src/contrib/Archive/DelayedArray/",
+  );
+  // Two-segment repos, and the archive prefix archiveFallback() produces.
+  assert.equal(
+    listablePrefix("packages/3.23/data/annotation/src/contrib/Archive/index.html"),
+    "packages/3.23/data/annotation/src/contrib/Archive/",
+  );
+  assert.equal(
+    listablePrefix("archive.bioconductor.org/packages/3.15/bioc/src/contrib/Archive/index.html"),
+    "archive.bioconductor.org/packages/3.15/bioc/src/contrib/Archive/",
+  );
+  assert.equal(listablePrefix("rss/index.html"), "rss/");
+
+  // Everything else 403s on the origin and must keep 404ing here -- listing
+  // them would publish ~1.35M crawlable pages bioconductor.org does not serve.
+  assert.equal(listablePrefix("packages/3.23/bioc/src/contrib/index.html"), null);
+  assert.equal(listablePrefix("packages/3.23/bioc/citations/bedbaser/index.html"), null);
+  assert.equal(listablePrefix("packages/3.23/bioc/bin/windows/contrib/4.6/index.html"), null);
+  assert.equal(listablePrefix("style/index.html"), null);
+  // A file under a listable directory is a file, not a listing.
+  assert.equal(
+    listablePrefix("packages/3.23/bioc/src/contrib/Archive/DelayedArray/DelayedArray_0.38.0.tar.gz"),
+    null,
+  );
+});
+
+test("renderIndex links absolutely and sorts", () => {
+  const html = renderIndex(
+    "packages/3.23/bioc/src/contrib/Archive/DelayedArray/",
+    [],
+    [
+      { name: "DelayedArray_0.38.1.tar.gz", size: 2 },
+      { name: "DelayedArray_0.38.0.tar.gz", size: 1 },
+    ],
+  );
+  // Absolute, because this page also answers the URL without the trailing
+  // slash -- Apache 301s that first, and relative hrefs would resolve a
+  // directory too high without the redirect.
+  assert.match(
+    html,
+    /href="\/packages\/3\.23\/bioc\/src\/contrib\/Archive\/DelayedArray\/DelayedArray_0\.38\.0\.tar\.gz"/,
+  );
+  assert.ok(html.indexOf("0.38.0") < html.indexOf("0.38.1"));
+  assert.match(html, /href="\/packages\/3\.23\/bioc\/src\/contrib\/Archive\/">Parent Directory/);
+  // Subdirectories keep their trailing slash, or the link lands on the
+  // extensionless-file candidate instead of the directory.
+  assert.match(renderIndex("rss/", ["build"], []), /href="\/rss\/build\/">build\/</);
 });
 
 test("archiveFallback keys archived packages onto the migrated OSN layout", () => {

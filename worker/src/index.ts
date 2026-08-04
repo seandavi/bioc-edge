@@ -7,6 +7,8 @@ import {
   notModified,
   redirectFor,
   logQuery,
+  listablePrefix,
+  renderIndex,
   LINKS_KEY,
   type Links,
   type Redirects,
@@ -105,7 +107,11 @@ export default {
       }
     }
 
-    const { res, key } = await fromR2(req, env, keys);
+    let { res, key } = await fromR2(req, env, keys);
+    if (res.status === 404) {
+      const listed = await listing(env, keys);
+      if (listed) ({ res, key } = listed);
+    }
 
     if (key && res.status === 200 && req.method === "GET" && !ranged) {
       ctx.waitUntil(cache.put(cacheUrl(url.origin, key), res.clone()));
@@ -171,6 +177,55 @@ async function fromR2(
   }
 
   return { res: await notFound(env), key: null };
+}
+
+/**
+ * The directory listings Apache generates and object storage has none of.
+ *
+ * Runs only after every candidate key has missed, so the R2 LIST it costs
+ * falls on requests that were going to 404 anyway -- and only on the few
+ * prefixes `listablePrefix()` recognises. Returned under the `index.html`
+ * candidate key, which is the key the cache lookup above already checks, so a
+ * PoP that has served this page once does not list again until it expires.
+ */
+async function listing(env: Env, keys: string[]): Promise<{ res: Response; key: string } | null> {
+  for (const key of keys) {
+    const prefix = listablePrefix(key);
+    if (!prefix) continue;
+
+    const dirs: string[] = [];
+    const files: { name: string; size: number }[] = [];
+    // R2 caps a page at 1000. Archive/ holds 172 package directories today, so
+    // one page covers it -- but a truncated listing is silently incomplete
+    // content rather than an error, which is the failure this file exists to
+    // avoid elsewhere. Page through instead of trusting the margin to hold.
+    let cursor: string | undefined;
+    do {
+      const page = await env.BUCKET.list({ prefix, delimiter: "/", cursor });
+      for (const p of page.delimitedPrefixes) dirs.push(p.slice(prefix.length, -1));
+      for (const o of page.objects) files.push({ name: o.key.slice(prefix.length), size: o.size });
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+    // Nothing there is a real 404, not an empty page: every other prefix that
+    // matches LISTABLE but holds nothing (devel before its first archived
+    // build) should answer the way the origin does.
+    if (!dirs.length && !files.length) continue;
+
+    return {
+      key,
+      res: new Response(renderIndex(prefix, dirs, files), {
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          // The one page on the site whose freshness is a TTL rather than a
+          // purge. sync.sh purges the keys rclone wrote, and archiving a
+          // tarball writes the tarball -- this page's key never changes, so it
+          // would never be purged and a year-long s-maxage would freeze it.
+          "cache-control": "public, max-age=300, s-maxage=3600",
+        },
+      }),
+    };
+  }
+  return null;
 }
 
 async function notFound(env: Env): Promise<Response> {
