@@ -20,3 +20,9 @@ cutover-diff-*/
 docs/_site/
 docs/.quarto/
 .claude/handoffs/
+
+# Upstream site repo, cloned by `just fetch-site`. Regenerate, do not commit.
+.cache/
+__pycache__/
+*.pyc
+astro/.astro/

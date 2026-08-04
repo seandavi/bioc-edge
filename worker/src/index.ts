@@ -162,6 +162,11 @@ async function fromR2(
     }
 
     const body = req.method === "HEAD" ? null : obj.body;
+    // Workers derives Content-Length from the body, so a bodyless HEAD drops
+    // it -- while Apache sends it. Worse than uniformly missing: a HEAD that
+    // hits the edge cache inherits the cached GET's headers and does have it,
+    // so the header appears or vanishes depending on cache state.
+    if (!body) headers.set("content-length", String(obj.size));
     return { res: new Response(body, { status: 200, headers }), key };
   }
 
