@@ -67,8 +67,19 @@ _COLS = ",\n       ".join(
 
 SELECT_SQL = f"SELECT {_COLS}\nFROM {{src}}"
 
-READ_CSV = ("read_csv('s3://{bucket}/{dist}.{month}-*.gz', delim='\\t', header=false, "
+READ_CSV = ("read_csv('{glob}', delim='\\t', header=false, "
             "comment='#', all_varchar=true, ignore_errors=true)")
+
+
+def source_glob(month, logs_dir=None):
+    """Where to read a month from: a local mirror of the bucket, or S3 directly.
+
+    Reading S3 is latency-bound on ~30k small objects per month; off local disk the
+    same conversion is CPU-bound and several times faster. If the logs have already
+    been copied down (rclone, --transfers 128), point at them.
+    """
+    name = f"{DISTRIBUTION}.{month}-*.gz"
+    return f"{str(logs_dir).rstrip('/')}/{name}" if logs_dir else f"s3://{BUCKET}/{name}"
 
 # ---------------------------------------------------------------------------
 # Interpretation lives here, as a view over the mirror — not in the extract.
@@ -97,15 +108,16 @@ WHERE sc_status IN ('200','301','302','307','308')
 """
 
 
-def connect():
+def connect(need_s3=True):
     import duckdb
     con = duckdb.connect()
-    con.execute("INSTALL httpfs; LOAD httpfs;")
-    con.execute("CREATE SECRET (TYPE s3, PROVIDER credential_chain, REGION 'us-east-1')")
+    if need_s3:
+        con.execute("INSTALL httpfs; LOAD httpfs;")
+        con.execute("CREATE SECRET (TYPE s3, PROVIDER credential_chain, REGION 'us-east-1')")
     return con
 
 
-def extract_month(con, month, out_dir):
+def extract_month(con, month, out_dir, logs_dir=None):
     """Mirror one month of logs to out_dir/year=YYYY/month=M/logs.parquet.
 
     DuckDB streams the COPY, so a month of logs does not need to fit in memory.
@@ -116,7 +128,7 @@ def extract_month(con, month, out_dir):
     if target.exists():          # resume: a 6-year backfill will be interrupted
         return None
     dest.mkdir(parents=True, exist_ok=True)
-    src = READ_CSV.format(bucket=BUCKET, dist=DISTRIBUTION, month=month)
+    src = READ_CSV.format(glob=source_glob(month, logs_dir))
     # The mapping below is positional, and read_csv skips the '#Fields:' header, so a
     # format change upstream would silently shift every column. Verified identical
     # 2020-2026, but assert it per month rather than trust it.
@@ -201,6 +213,8 @@ def main():
     ap.add_argument("--from", dest="start", help="first month, YYYY-MM")
     ap.add_argument("--to", dest="end", help="last month, YYYY-MM (inclusive)")
     ap.add_argument("--out", default="./cloudfront-parquet", type=pathlib.Path)
+    ap.add_argument("--logs-dir", type=pathlib.Path,
+                    help="read from a local mirror of the bucket instead of S3")
     ap.add_argument("--self-check", action="store_true",
                     help="verify the downloads view and exit")
     a = ap.parse_args()
@@ -210,10 +224,10 @@ def main():
     if not (a.start and a.end):
         ap.error("--from and --to are required (or use --self-check)")
 
-    con, total = connect(), 0
+    con, total = connect(need_s3=a.logs_dir is None), 0
     for month in months(a.start, a.end):
         t0 = time.time()
-        n = extract_month(con, month, a.out)
+        n = extract_month(con, month, a.out, a.logs_dir)
         note = "skipped (exists)" if n is None else f"{n:>12,d} rows  {time.time()-t0:5.0f}s"
         print(f"{month}  {note}", flush=True)
         total += n or 0
