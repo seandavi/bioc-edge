@@ -67,8 +67,18 @@ _COLS = ",\n       ".join(
 
 SELECT_SQL = f"SELECT {_COLS}\nFROM {{src}}"
 
+# DO NOT set comment='#'. DuckDB treats '#' as a comment marker mid-line, not only
+# at line start, so any record whose user-agent, referer or URI contains a '#' is
+# truncated at that point — a Sogou crawler UA ending "webmasters.htm#07" truncates
+# to exactly 11 fields. Combined with ignore_errors=true the malformed rows are then
+# dropped silently: one 9,168-line file yielded 93 rows. Header lines are filtered in
+# SQL instead (see HEADERLESS), and null_padding lets the 1-field '#Version'/'#Fields'
+# lines parse so they can be filtered rather than derailing the sniffer.
 READ_CSV = ("read_csv('{glob}', delim='\\t', header=false, "
-            "comment='#', all_varchar=true, ignore_errors=true)")
+            "all_varchar=true, null_padding=true, ignore_errors=true)")
+
+# The two '#Version:' / '#Fields:' lines at the top of every object.
+HEADERLESS = "(SELECT * FROM {read} WHERE column00 NOT LIKE '#%')"
 
 
 def source_glob(month, logs_dir=None):
@@ -128,10 +138,11 @@ def extract_month(con, month, out_dir, logs_dir=None):
     if target.exists():          # resume: a 6-year backfill will be interrupted
         return None
     dest.mkdir(parents=True, exist_ok=True)
-    src = READ_CSV.format(glob=source_glob(month, logs_dir))
-    # The mapping below is positional, and read_csv skips the '#Fields:' header, so a
-    # format change upstream would silently shift every column. Verified identical
-    # 2020-2026, but assert it per month rather than trust it.
+    src = HEADERLESS.format(read=READ_CSV.format(glob=source_glob(month, logs_dir)))
+    # The mapping below is positional, so a format change upstream would silently shift
+    # every column. Verified identical 2020-2026, but assert it per month rather than
+    # trust it. Note this only samples the schema; it cannot catch per-row truncation,
+    # which is why the row-count reconciliation in --verify exists.
     n_src = len(con.execute(f"SELECT * FROM {src} LIMIT 0").description)
     if n_src != len(FIELDS):
         raise SystemExit(f"{month}: expected {len(FIELDS)} CloudFront fields, source has "
@@ -143,6 +154,25 @@ def extract_month(con, month, out_dir, logs_dir=None):
                 "(FORMAT parquet, COMPRESSION zstd)")
     tmp.rename(target)
     return con.execute(f"SELECT count(*) FROM read_parquet('{target}')").fetchone()[0]
+
+
+def verify_month(con, month, out_dir, logs_dir=None):
+    """Reconcile the Parquet row count against the source for one month.
+
+    This exists because the failure that motivated it was silent. `comment='#'`
+    truncated any record containing a '#' and `ignore_errors=true` then dropped the
+    malformed rows without a word — one file yielded 93 rows out of 9,168, and the
+    build carried on reporting success. A schema assertion cannot catch that: the
+    columns are right, the rows are missing. Only counting both sides can.
+    """
+    year, mon = month.split("-")
+    target = out_dir / f"year={year}" / f"month={int(mon)}" / "logs.parquet"
+    if not target.exists():
+        return None
+    src = HEADERLESS.format(read=READ_CSV.format(glob=source_glob(month, logs_dir)))
+    n_src = con.execute(f"SELECT count(*) FROM {src}").fetchone()[0]
+    n_pq = con.execute(f"SELECT count(*) FROM read_parquet('{target}')").fetchone()[0]
+    return n_src, n_pq
 
 
 def months(start, end):
@@ -217,12 +247,29 @@ def main():
                     help="read from a local mirror of the bucket instead of S3")
     ap.add_argument("--self-check", action="store_true",
                     help="verify the downloads view and exit")
+    ap.add_argument("--verify", action="store_true",
+                    help="reconcile Parquet row counts against the source and exit")
     a = ap.parse_args()
 
     if a.self_check:
         return self_check()
     if not (a.start and a.end):
         ap.error("--from and --to are required (or use --self-check)")
+
+    if a.verify:
+        con, bad = connect(need_s3=a.logs_dir is None), 0
+        for month in months(a.start, a.end):
+            r = verify_month(con, month, a.out, a.logs_dir)
+            if r is None:
+                print(f"{month}  (not built)")
+                continue
+            n_src, n_pq = r
+            ok = n_src == n_pq
+            bad += not ok
+            print(f"{month}  source {n_src:>12,d}  parquet {n_pq:>12,d}  "
+                  f"{'OK' if ok else f'MISMATCH {n_pq - n_src:+,d}'}", flush=True)
+        print(f"\n{bad} month(s) mismatched")
+        return 1 if bad else 0
 
     con, total = connect(need_s3=a.logs_dir is None), 0
     for month in months(a.start, a.end):
