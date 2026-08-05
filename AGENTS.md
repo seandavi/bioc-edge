@@ -4,6 +4,14 @@ Serving bioconductor.org from primary sources, on Cloudflare R2 behind a Worker,
 staging and master hosts in the loop. See `docs/` (a Quarto site) for the current-state
 architecture and the migration plan.
 
+## Access-log analytics
+
+The CloudFront access-log mirror — 7.1B rows, raw gzip plus Parquet plus an Iceberg table in
+R2 — and how to query it with Trino, DuckDB, StarRocks or ClickHouse is documented in
+`ANALYTICS.md`. That file is **root-level and deliberately not part of the public site**: it
+carries internal paths, account-specific catalog URIs and secret names. The public account of
+the same work is `docs/download-stats.qmd`.
+
 ## Publishing
 
 `docs/*.qmd` is a **public** Quarto site — GitHub Pages, deployed on every push to `main` that
