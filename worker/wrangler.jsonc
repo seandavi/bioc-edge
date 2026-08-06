@@ -5,6 +5,14 @@
   "compatibility_date": "2026-07-27",
   "observability": { "enabled": true },
 
+  // Trace events -- and with them the access record this Worker console.logs --
+  // are only shipped to Logpush for Workers that opt in here. The account-wide
+  // workers_trace_events job has no filter and every field selected, and still
+  // captured nothing from this script until this flag was set. A missing opt-in
+  // is silent on both sides: the job reports success, the bucket fills with
+  // other Workers' events, and this one is simply absent.
+  "logpush": true,
+
   // Bucket stays private — reachable only through this Worker's binding.
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "bioc-site" }],
 
