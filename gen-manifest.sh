@@ -33,6 +33,8 @@ REPOS=${REPOS:-bioc data/annotation data/experiment workflows books}
 # future second bucket for package content does not need a code change.
 ROOT=${ROOT:-packages}
 
+. "$(dirname "$0")/cf-purge.sh"
+
 : "${CLOUDFLARE_API_TOKEN:?run: ./make-env.sh && set -a && . ./.env && set +a}"
 
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
@@ -127,21 +129,14 @@ if [[ -z ${DRY_RUN:-} ]]; then
   # /packages/plyranges during the POC.
   urls=("https://$HOST/$PREFIX/index.json")
   for e in "${emitted[@]}"; do urls+=("https://$HOST/$PREFIX/${e%%:*}.tsv.gz"); done
-  api="https://api.cloudflare.com/client/v4"
-  auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
-  zone_id=$(curl -sS "${auth[@]}" "$api/zones?name=$ZONE" | jq -r '.result[0].id // empty')
-  if [[ -z $zone_id ]]; then
+  if ! zone_id=$(cf_zone_id "$ZONE"); then
     echo "WARNING: cannot resolve zone $ZONE -- manifests published but NOT purged." >&2
     echo "         The edge will serve the previous ones until purged by hand." >&2
   else
-    # 100 URLs per request is the documented maximum below Enterprise; this
-    # is ~11, so a single request.
-    for ((i = 0; i < ${#urls[@]}; i += 100)); do
-      ok=$(curl -sS -X POST "${auth[@]}" \
-        --data "$(jq -nc --args '{files: $ARGS.positional}' "${urls[@]:i:100}")" \
-        "$api/zones/$zone_id/purge_cache" | jq -r '.success')
-      [[ $ok == true ]] || { echo "purge failed for batch $i" >&2; exit 1; }
-    done
+    # ~11 URLs, so a single request -- but it spends from the same account-wide
+    # budget as the thousands sync.sh purges moments later, which is why this
+    # goes through the shared backoff rather than a bare curl.
+    cf_purge_urls "$zone_id" "${urls[@]}" || exit 1
     echo "purged ${#urls[@]} manifest urls"
   fi
 else

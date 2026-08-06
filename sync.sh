@@ -32,10 +32,9 @@ ZONE=${ZONE:-cancerdatasci.org}
 # inline because it is the scope decision, not a tuning knob -- see the header
 # of ./rsync-filter for what is dropped and what it costs.
 RSYNC_FILTER=${RSYNC_FILTER:-$(dirname "$0")/rsync-filter}
-# Purge-by-URL is the only targeted option below Enterprise. Cloudflare allows
-# 100 URLs per request and 800 URLs/second account-wide on Free, so 786 URLs --
-# a measured day of build output -- is 8 requests and about one second of rate
-# budget. Nothing like a constraint.
+# How many changed URLs are still worth purging one at a time, rather than
+# giving up and dropping the whole edge cache. The mechanics of the purge
+# itself -- batch size, pacing, retries -- live in cf-purge.sh.
 #
 # The old ceiling of 300 came with a rationale written when this bucket held
 # 507 objects: past a few hundred changes, purging the zone was fewer API calls
@@ -48,9 +47,8 @@ RSYNC_FILTER=${RSYNC_FILTER:-$(dirname "$0")/rsync-filter}
 # genuinely is simpler, and a change that large should have a human attached
 # anyway -- a release roll drops ~129k objects in one run.
 PURGE_MAX=${PURGE_MAX:-10000}
-# 100 is the documented per-request maximum on Free/Pro/Business (500 on
-# Enterprise). This was 30, which tripled the request count for no reason.
-PURGE_BATCH=${PURGE_BATCH:-100}
+
+. "$(dirname "$0")/cf-purge.sh"
 
 [[ -n ${RSYNC_SRC:-} || -d $DEST ]] ||
   { echo "no mirror at $DEST -- run ./crawl.sh site first" >&2; exit 1; }
@@ -240,27 +238,15 @@ if [[ ${DRY_RUN:-} == 1 ]]; then
 fi
 [[ ${#changed[@]} -gt 0 ]] || exit 0
 
-api="https://api.cloudflare.com/client/v4"
-auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
-
-zone_id=$(curl -sS "${auth[@]}" "$api/zones?name=$ZONE" | jq -r '.result[0].id // empty')
-[[ -n $zone_id ]] || { echo "cannot resolve zone $ZONE; token may lack Zone:Read" >&2; exit 1; }
-
-purge_body() {
-  local ok
-  ok=$(curl -sS -X POST "${auth[@]}" --data "$1" "$api/zones/$zone_id/purge_cache" |
-    jq -r '.success, (.errors[]?.message)' | head -3)
-  [[ $ok == true ]] || { echo "purge failed: $ok" >&2; return 1; }
-}
+zone_id=$(cf_zone_id "$ZONE") ||
+  { echo "cannot resolve zone $ZONE; token may lack Zone:Read" >&2; exit 1; }
 
 if ((${#changed[@]} > PURGE_MAX)); then
   echo "purging entire zone (${#changed[@]} > PURGE_MAX=$PURGE_MAX)"
-  purge_body '{"purge_everything":true}'
+  cf_purge_everything "$zone_id"
 else
   urls=()
   for k in "${changed[@]}"; do urls+=("https://$HOST/$k"); done
-  for ((i = 0; i < ${#urls[@]}; i += PURGE_BATCH)); do
-    purge_body "$(jq -nc --args '{files: $ARGS.positional}' "${urls[@]:i:PURGE_BATCH}")"
-  done
+  cf_purge_urls "$zone_id" "${urls[@]}"
   echo "purged ${#urls[@]} urls"
 fi
