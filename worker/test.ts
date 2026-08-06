@@ -13,6 +13,7 @@ import {
   redirectFor,
   listablePrefix,
   renderIndex,
+  accessRecord,
 } from "./src/keys.ts";
 import redirects from "./src/redirects.json" with { type: "json" };
 
@@ -409,4 +410,85 @@ test("cache hits honour client validators", () => {
     false,
   );
   assert.equal(notModified(req({}), res({ etag: '"abc"', "last-modified": lm })), false);
+});
+
+// ---------------------------------------------------------------------------
+// The access record. This exists because the failure mode is not a crash: a
+// Logpush job can run for months emitting records that look healthy and are
+// missing the one field download statistics needed, and nothing can backfill
+// it. See seandavi/bioc-cloudflare#69.
+
+// FIELDS from cloudfront-logs-to-parquet.py, minus date/time -- those are
+// derivable from ts and are deliberately not split at ingest.
+const CLOUDFRONT_FIELDS = [
+  "x_edge_location", "sc_bytes", "c_ip", "cs_method", "cs_host", "cs_uri_stem",
+  "sc_status", "cs_referer", "cs_user_agent", "cs_uri_query", "cs_cookie",
+  "x_edge_result_type", "x_edge_request_id", "x_host_header", "cs_protocol",
+  "cs_bytes", "time_taken", "x_forwarded_for", "ssl_protocol", "ssl_cipher",
+  "x_edge_response_result_type", "cs_protocol_version", "fle_status",
+  "fle_encrypted_fields", "c_port", "time_to_first_byte",
+  "x_edge_detailed_result_type", "sc_content_type", "sc_content_len",
+  "sc_range_start", "sc_range_end",
+];
+
+const REQ = () =>
+  new Request("https://bioconductor.org/packages/3.23/bioc/src/contrib/limma_3.69.2.tar.gz?x=1", {
+    headers: {
+      "cf-connecting-ip": "203.0.113.7",
+      "user-agent": "R (4.6.1 x86_64-pc-linux-gnu)",
+      referer: "https://bioconductor.org/packages/limma/",
+      cookie: "session=should-not-be-logged",
+      "cf-ray": "9a1b2c3d4e5f6789",
+      host: "bioconductor.org",
+    },
+  });
+
+test("the record carries every CloudFront column", () => {
+  const rec = accessRecord(REQ(), 200, "MISS", null, null) as Record<string, unknown>;
+  const missing = CLOUDFRONT_FIELDS.filter((f) => !(f in rec));
+  assert.deepEqual(missing, [], `dropped CloudFront columns: ${missing.join(", ")}`);
+});
+
+test("the fields statistics depend on are populated, not null", () => {
+  const rec = accessRecord(REQ(), 200, "MISS", null, 1000) as Record<string, unknown>;
+  assert.equal(rec.c_ip, "203.0.113.7");
+  assert.equal(rec.cs_user_agent, "R (4.6.1 x86_64-pc-linux-gnu)");
+  assert.equal(rec.cs_referer, "https://bioconductor.org/packages/limma/");
+  assert.equal(rec.cs_uri_stem, "/packages/3.23/bioc/src/contrib/limma_3.69.2.tar.gz");
+  assert.equal(rec.cs_uri_query, "?x=1");
+  assert.equal(rec.sc_status, 200);
+  assert.equal(rec.x_edge_request_id, "9a1b2c3d4e5f6789");
+  assert.ok(typeof rec.time_taken === "number");
+});
+
+test("cookies are not collected even when sent", () => {
+  const rec = accessRecord(REQ(), 200, "MISS", null, null) as Record<string, unknown>;
+  assert.equal(rec.cs_cookie, null);
+});
+
+test("byte counts come from the response, and null means unknown", () => {
+  const sized = new Response(null, { headers: { "content-length": "611924" } });
+  assert.equal((accessRecord(REQ(), 200, "MISS", sized, null) as Record<string, unknown>).sc_bytes, 611924);
+  // A streamed R2 body carries no Content-Length. Unknown, not zero.
+  assert.equal((accessRecord(REQ(), 200, "MISS", new Response(null), null) as Record<string, unknown>).sc_bytes, null);
+});
+
+test("range responses record their span", () => {
+  const partial = new Response(null, {
+    status: 206,
+    headers: { "content-range": "bytes 0-65535/611924" },
+  });
+  const rec = accessRecord(REQ(), 206, "RANGE", partial, null) as Record<string, unknown>;
+  assert.equal(rec.sc_range_start, 0);
+  assert.equal(rec.sc_range_end, 65535);
+  assert.equal(rec.sc_bytes, 65536);
+});
+
+test("a full GET records the object size, since R2 bodies carry no length", () => {
+  const streamed = new Response("body", { status: 200 });
+  const rec = accessRecord(REQ(), 200, "MISS", streamed, null, 611924) as Record<string, unknown>;
+  assert.equal(rec.sc_bytes, 611924);
+  // HEAD sends no body: charging it the object size would overstate transfer.
+  const head = new Response(null, { status: 200 });
+  assert.equal((accessRecord(REQ(), 200, "MISS", head, null, 611924) as Record<string, unknown>).sc_bytes, null);
 });

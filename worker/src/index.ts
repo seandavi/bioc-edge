@@ -7,6 +7,7 @@ import {
   notModified,
   redirectFor,
   logQuery,
+  accessRecord,
   listablePrefix,
   renderIndex,
   LINKS_KEY,
@@ -57,6 +58,7 @@ async function symlinks(env: Env): Promise<Links> {
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const t0 = Date.now();
     if (req.method !== "GET" && req.method !== "HEAD") {
       return new Response("Method Not Allowed", {
         status: 405,
@@ -74,7 +76,7 @@ export default {
     // what produced redirects.json from inventory/htaccess-20260730.conf.
     const target = redirectFor(path, redirects as Redirects);
     if (target) {
-      log(env, ctx, req, 301, "REDIRECT");
+      log(env, ctx, req, 301, "REDIRECT", null, t0);
       return new Response(null, {
         status: 301,
         headers: { location: target, "cache-control": "public, max-age=3600" },
@@ -96,10 +98,10 @@ export default {
         const hit = await cache.match(cacheUrl(url.origin, key));
         if (hit) {
           if (notModified(req, hit)) {
-            log(env, ctx, req, 304, "HIT");
+            log(env, ctx, req, 304, "HIT", null, t0);
             return new Response(null, { status: 304, headers: hit.headers });
           }
-          log(env, ctx, req, hit.status, "HIT");
+          log(env, ctx, req, hit.status, "HIT", hit, t0);
           return req.method === "HEAD"
             ? new Response(null, { status: hit.status, headers: hit.headers })
             : hit;
@@ -107,7 +109,7 @@ export default {
       }
     }
 
-    let { res, key } = await fromR2(req, env, keys);
+    let { res, key, size } = await fromR2(req, env, keys);
     if (res.status === 404) {
       const listed = await listing(env, keys);
       if (listed) ({ res, key } = listed);
@@ -116,7 +118,7 @@ export default {
     if (key && res.status === 200 && req.method === "GET" && !ranged) {
       ctx.waitUntil(cache.put(cacheUrl(url.origin, key), res.clone()));
     }
-    log(env, ctx, req, res.status, ranged ? "RANGE" : "MISS");
+    log(env, ctx, req, res.status, ranged ? "RANGE" : "MISS", res, t0, size ?? null);
     return res;
   },
 };
@@ -125,7 +127,7 @@ async function fromR2(
   req: Request,
   env: Env,
   keys: string[],
-): Promise<{ res: Response; key: string | null }> {
+): Promise<{ res: Response; key: string | null; size?: number }> {
   for (const key of keys) {
     const obj = await env.BUCKET.get(key, {
       onlyIf: req.headers,
@@ -173,7 +175,7 @@ async function fromR2(
     // hits the edge cache inherits the cached GET's headers and does have it,
     // so the header appears or vanishes depending on cache state.
     if (!body) headers.set("content-length", String(obj.size));
-    return { res: new Response(body, { status: 200, headers }), key };
+    return { res: new Response(body, { status: 200, headers }), key, size: obj.size };
   }
 
   return { res: await notFound(env), key: null };
@@ -238,10 +240,37 @@ async function notFound(env: Env): Promise<Response> {
  * Per-request detail the zone dashboard cannot give us: which paths, which
  * crawlers, which ASNs. This is the open "is the bot traffic legitimate?"
  * question, and the only reason a Worker sits in the request path.
+ *
+ * Two sinks, one capture, and they are not interchangeable:
+ *
+ *   1. `console.log` -> Workers Trace Events Logpush -> R2. The complete,
+ *      unsampled record download statistics are computed from. The trace
+ *      envelope Logpush ships carries only URL, method, status and timing --
+ *      no client IP, no user agent, no size -- so anything not written here
+ *      is gone permanently and cannot be backfilled (ADR 0003).
+ *   2. Analytics Engine. A dashboard, never the record: it samples, and the
+ *      /24 truncation below is deliberate for the ranges question it answers.
+ *
+ * Do not "unify" these. Pointing statistics at the Analytics Engine shape
+ * yields distinct-IP counts that are wrong and look entirely plausible.
+ * Do not filter or aggregate in this function either -- it writes the record,
+ * not a view of it (ADR 0002).
  */
-function log(env: Env, ctx: ExecutionContext, req: Request, status: number, cacheStatus: string) {
+function log(
+  env: Env,
+  ctx: ExecutionContext,
+  req: Request,
+  status: number,
+  cacheStatus: string,
+  res: Response | null = null,
+  t0: number | null = null,
+  size: number | null = null,
+) {
+  console.log(JSON.stringify(accessRecord(req, status, cacheStatus, res, t0, size)));
+
   if (!env.LOGS) return;
   const cf = req.cf as IncomingRequestCfProperties | undefined;
+
   // The open question is "distributed crawler activity across similar IP
   // ranges", which is a question about ranges, not individuals. Logging the
   // /24 (or /48) answers it without retaining full addresses.
