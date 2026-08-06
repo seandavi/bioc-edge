@@ -26,3 +26,6 @@ docs/.quarto/
 __pycache__/
 *.pyc
 astro/.astro/
+
+# Local-only exports (issue archives, findings). Never commit.
+*.local.md
