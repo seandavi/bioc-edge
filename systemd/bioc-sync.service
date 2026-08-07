@@ -1,6 +1,6 @@
 [Unit]
 Description=Sync bioconductor.org docroot from the upstream docroot host to R2
-Documentation=file:///home/davsean/Documents/git/bioc-cloudflare/MIGRATION.md
+Documentation=file:///home/davsean/Documents/git/bioc-site/MIGRATION.md
 # Never let the hourly sync and the weekly checksum pass run at once: they
 # would fight over the same 453 GB of local disk, and the reconcile would be
 # comparing a mirror that is being rewritten underneath it.
@@ -14,10 +14,10 @@ OnFailure=bioc-notify@%N.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/davsean/Documents/git/bioc-cloudflare
-EnvironmentFile=/home/davsean/Documents/git/bioc-cloudflare/.env
+WorkingDirectory=/home/davsean/Documents/git/bioc-site
+EnvironmentFile=/home/davsean/Documents/git/bioc-site/.env
 Environment=RSYNC_SRC=$RSYNC_SRC
-ExecStart=/home/davsean/Documents/git/bioc-cloudflare/sync.sh
+ExecStart=/home/davsean/Documents/git/bioc-site/sync.sh
 # A pull of this size can legitimately take hours on a cold or heavily changed
 # tree. The timer's Persistent=true means a missed run is caught up, so killing
 # a slow one is safe -- but the ceiling has to be above a normal full pull.

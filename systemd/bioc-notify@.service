@@ -3,5 +3,5 @@ Description=Report failure of %i to GitHub
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/davsean/Documents/git/bioc-cloudflare
-ExecStart=/home/davsean/Documents/git/bioc-cloudflare/notify-failure.sh %i.service
+WorkingDirectory=/home/davsean/Documents/git/bioc-site
+ExecStart=/home/davsean/Documents/git/bioc-site/notify-failure.sh %i.service
