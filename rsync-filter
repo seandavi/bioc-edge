@@ -4,37 +4,20 @@
 # This file is the scope decision, in one place. Editing it changes what R2
 # holds; nothing in sync.sh needs to change with it.
 
-# --- checkResults/: keep only the current release and devel ------------------
+# --- checkResults/: mirrored in full -------------------------------------------
 #
-# 2,607,459 files for 38.3 GB -- 70% of every object in the docroot for 8% of
-# the bytes. R2 bills per operation, so this directory alone drove the sync
-# cost, the wall-clock, and the nightly purge volume.
+# 2,607,459 files for 38.3 GB -- 70% of every object in the docroot. Used to be
+# LATEST-only for 3.23/3.24 (251,078 files) because R2 bills per operation and
+# these builds run nightly. That cost is churn, not size, and it only applies
+# to the two live releases.
 #
-# Keeping 3.23 and 3.24 *-LATEST costs 251,078 files / 3.04 GB and drops
-# 2,356,377. Whole-docroot object count falls 3.71M -> 1.35M.
-#
-# Note the older releases are not "history" in the cheap sense: dated snapshots
-# are only 618,420 files. The bulk is each past release's own *-LATEST, 1.65M
-# files across 3.13-3.22. Widening this to all versions costs ~1.9M objects, so
-# widen deliberately rather than by reflex.
-#
-# robots.txt already disallows /checkResults/, and these are build telemetry
-# rather than published content -- but maintainers do use them, so anything
-# dropped here should 404 rather than silently mislead.
+# 2026-08-07 (ADR 0006): releases <=3.22 are decided archival -- inert since
+# 2025, nothing left to regenerate. checkResults for those releases carries
+# the same terminal state and gets the same treatment already given the OSN
+# archive: a one-time load, not an ongoing sync cost. 3.23/3.24 keep churning
+# nightly regardless; this only removes the exclusion for everything else.
 + /checkResults/
-# release and devel are symlinks into the version dirs; the Worker resolves
-# them from _symlinks.json, so they have to survive the filter.
-+ /checkResults/release
-+ /checkResults/devel
-# The landing page, which is a real file and not an autoindex. Without this the
-# `- ***` below drops it and /checkResults/ 404s even though everything it
-# links to is present.
-+ /checkResults/index.html
-+ /checkResults/3.23/
-+ /checkResults/3.24/
-+ /checkResults/3.23/*-LATEST/***
-+ /checkResults/3.24/*-LATEST/***
-- /checkResults/***
++ /checkResults/***
 
 # --- abandoned staging in the live docroot -----------------------------------
 #

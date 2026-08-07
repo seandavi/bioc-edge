@@ -102,6 +102,11 @@ Two things fall out of this that were not visible from the HTTP crawl:
   Consequence to accept deliberately: a build report for BioC 3.19 will 404. `robots.txt`
   already disallows `/checkResults/` so nothing is de-indexed, but maintainers do follow
   these links. Widening scope is a one-line edit to `rsync-filter` if that proves wrong.
+
+  **Revisited 2026-08-07 (ADR 0006):** it proved wrong. Releases ≤3.22 are decided archival —
+  inert since 2025, nothing left to regenerate — so the churn/cost argument above no longer
+  applies to them; only 3.23/3.24 still churn nightly. `rsync-filter` now mirrors `checkResults/`
+  in full as a one-time load, the same treatment already given the OSN archive.
 - **`LoriTempToRemove/`** is 6.1 GB of abandoned staging sitting in the live docroot. The
   name is upstream's. Excluded in `rsync-filter`; worth reporting alongside the
   `sitemap.xml` bug.

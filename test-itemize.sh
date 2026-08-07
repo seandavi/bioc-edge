@@ -73,8 +73,11 @@ expect "no-op" up
 expect "no-op" gone
 
 # 7. The scope filter. rsync filter rules are order-sensitive and fail quietly
-#    in both directions -- dropping wanted content, or silently pulling 2.3M
+#    in both directions -- dropping wanted content, or silently pulling
 #    unwanted objects. Build the real directory shapes and assert both sides.
+#    checkResults is mirrored in full (ADR 0006) -- archival releases (3.20,
+#    3.11) are included alongside the live ones (3.23, 3.24), only
+#    LoriTempToRemove/ stays excluded.
 filt=$(dirname "$(readlink -f "$0")")/rsync-filter
 [[ -f $filt ]] || { echo "FAIL no rsync-filter next to this script"; exit 1; }
 
@@ -104,6 +107,8 @@ want=$(printf '%s\n' \
   checkResults/3.23/bioc-LATEST/pkg.html \
   checkResults/3.23/books-LATEST/b.html \
   checkResults/3.24/bioc-LATEST/dev.html \
+  checkResults/3.20/bioc-LATEST/old.html \
+  checkResults/3.11/bioc-20201017/dated.html \
   checkResults/devel \
   checkResults/index.html \
   checkResults/release \
