@@ -214,6 +214,36 @@ export function renderIndex(
     .join("\n");
 }
 
+/**
+ * The four repos master probes when resolving a package short URL, in an
+ * order that cannot matter: a package name exists in one repo per release.
+ */
+export const PKG_REPOS = ["bioc", "data/annotation", "data/experiment", "workflows"];
+
+/**
+ * Package short URLs -- /packages/<pkg> and /packages/<ver>/<pkg> -- are
+ * Apache rewrites on master, and they are NOT in the captured .htaccess:
+ * the rule lives elsewhere in the vhost config, so gen-redirects.ts can
+ * never emit it (issue #74). Measured on production (2026-08-08):
+ *
+ *   /packages/DECIPHER        302 -> /packages/release/bioc/html/DECIPHER.html
+ *   /packages/3.23/DECIPHER   302 -> /packages/3.23/bioc/html/DECIPHER.html
+ *   /packages/affydata        302 -> .../data/experiment/html/affydata.html
+ *   /packages/rnaseqGene      302 -> .../workflows/html/rnaseqGene.html
+ *   /packages/OSCA.intro      302 -> /about/removed-packages/   (books too)
+ *
+ * The version segment stays literal in the target (`release`, `devel`, or
+ * numeric), exactly as master emits it; the symlink map resolves it on the
+ * next request. The package pattern is R's own (letters, digits, dots,
+ * letter first), so paths this never matched keep 404ing as before.
+ */
+const SHORT_URL = /^packages\/(?:(\d+\.\d+|release|devel)\/)?([A-Za-z][A-Za-z0-9.]*)\/?$/;
+
+export function packageShortUrl(pathname: string): { ver: string; pkg: string } | null {
+  const m = SHORT_URL.exec(pathname.replace(/^\/+/, ""));
+  return m ? { ver: m[1] ?? "release", pkg: m[2] } : null;
+}
+
 /** Shape of worker/src/redirects.json -- see worker/gen-redirects.ts. */
 export interface Redirects {
   exact: Record<string, string>;

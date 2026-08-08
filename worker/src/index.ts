@@ -9,7 +9,10 @@ import {
   logQuery,
   accessRecord,
   listablePrefix,
+  packageShortUrl,
+  PKG_REPOS,
   renderIndex,
+  resolveLinks,
   LINKS_KEY,
   type Links,
   type Redirects,
@@ -113,6 +116,13 @@ export default {
     if (res.status === 404) {
       const listed = await listing(env, keys);
       if (listed) ({ res, key } = listed);
+      else {
+        const redir = await packageRedirect(env, path, await symlinks(env));
+        if (redir) {
+          log(env, ctx, req, 302, "REDIRECT", null, t0);
+          return redir;
+        }
+      }
     }
 
     if (key && res.status === 200 && req.method === "GET" && !ranged) {
@@ -228,6 +238,33 @@ async function listing(env: Env, keys: string[]): Promise<{ res: Response; key: 
     };
   }
   return null;
+}
+
+/**
+ * Master's package short URLs, reimplemented (issue #74; see packageShortUrl
+ * in keys.ts for the measured behaviour). Runs only after every candidate key
+ * has missed, so the up-to-four R2 HEADs fall on requests that were going to
+ * 404 anyway. 302 not 301, like master: which repo -- and whether the package
+ * exists at all -- changes across releases. The probe resolves release/devel
+ * through the symlink map, but the Location keeps the literal segment master
+ * emits.
+ */
+async function packageRedirect(env: Env, path: string, links: Links): Promise<Response | null> {
+  const short = packageShortUrl(path);
+  if (!short) return null;
+  for (const repo of PKG_REPOS) {
+    const target = `packages/${short.ver}/${repo}/html/${short.pkg}.html`;
+    if (await env.BUCKET.head(resolveLinks(target, links))) return found(`/${target}`);
+  }
+  return found("/about/removed-packages/");
+}
+
+/** 302 with master's TTL (Cache-Control: max-age=600, measured). */
+function found(location: string): Response {
+  return new Response(null, {
+    status: 302,
+    headers: { location, "cache-control": "public, max-age=600" },
+  });
 }
 
 async function notFound(env: Env): Promise<Response> {
