@@ -12,6 +12,7 @@ import {
   archiveFallback,
   redirectFor,
   listablePrefix,
+  packageShortUrl,
   renderIndex,
   accessRecord,
 } from "./src/keys.ts";
@@ -309,6 +310,33 @@ test("archiveFallback keys archived packages onto the migrated OSN layout", () =
   // archive key would be a silently wrong 200, a missing one only the 404
   // we were already serving.
   assert.equal(archiveFallback("packages/2.10/bioc/src/contrib/x.tar.gz", {}), null);
+});
+
+test("package short URLs parse: bare, versioned, release/devel, trailing slash", () => {
+  // Measured production behaviour, 2026-08-08 (issue #74).
+  assert.deepEqual(packageShortUrl("/packages/DECIPHER"), { ver: "release", pkg: "DECIPHER" });
+  assert.deepEqual(packageShortUrl("/packages/3.23/DECIPHER"), { ver: "3.23", pkg: "DECIPHER" });
+  assert.deepEqual(packageShortUrl("/packages/3.23/DECIPHER/"), { ver: "3.23", pkg: "DECIPHER" });
+  assert.deepEqual(packageShortUrl("/packages/devel/DECIPHER"), { ver: "devel", pkg: "DECIPHER" });
+  // Dotted names are the case candidates() cannot help with: the last
+  // segment reads as having an extension, so only the bare key was tried.
+  assert.deepEqual(packageShortUrl("/packages/BSgenome.Hsapiens.UCSC.hg38"), {
+    ver: "release",
+    pkg: "BSgenome.Hsapiens.UCSC.hg38",
+  });
+});
+
+test("package short URLs do not swallow real paths", () => {
+  // Canonical landing pages and deeper paths pass through untouched.
+  assert.equal(packageShortUrl("/packages/3.23/bioc/html/DECIPHER.html"), null);
+  assert.equal(packageShortUrl("/packages/release/bioc/src/contrib/x_1.0.tar.gz"), null);
+  // /packages itself is a real page, and a version alone is not a package.
+  assert.equal(packageShortUrl("/packages"), null);
+  assert.equal(packageShortUrl("/packages/3.23/"), null);
+  // Names R forbids (hyphens, leading digit) stay 404s rather than probing.
+  assert.equal(packageShortUrl("/packages/foo-bar"), null);
+  assert.equal(packageShortUrl("/packages/3.23/2ndPkg"), null);
+  assert.equal(packageShortUrl("/help/faq"), null);
 });
 
 test("candidates tries the archive fallback last, only for old versions", () => {
