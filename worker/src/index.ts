@@ -18,11 +18,26 @@ import {
   type Redirects,
 } from "./keys.ts";
 import redirects from "./redirects.json";
+import { WorkflowEntrypoint, type WorkflowStep, type WorkflowEvent } from "cloudflare:workers";
+import {
+  approvalOutcome,
+  detectDrift,
+  notify,
+  readPair,
+  redirectVersionBound,
+  rollInstanceId,
+  DEFAULTS as ROLL_DEFAULTS,
+  type Approval,
+  type ReleaseRollParams,
+} from "./workflows/release-roll.ts";
 
 interface Env {
   BUCKET: R2Bucket;
   LOGS?: AnalyticsEngineDataset;
   NOT_FOUND_KEY?: string;
+  RELEASE_ROLL?: Workflow<ReleaseRollParams>;
+  /** Where the release-roll alert posts. Unset = log only. */
+  NOTIFY_URL?: string;
 }
 
 /**
@@ -60,6 +75,24 @@ async function symlinks(env: Env): Promise<Links> {
 }
 
 export default {
+  /**
+   * The clock for the release-roll guard (docs/adr/0007). Cheap fetch-and-check
+   * inline; a Workflow instance only when the pair has actually drifted past
+   * what this deploy serves. Cron Triggers do not retry a failed invocation --
+   * a transient fetch error here just waits for the next fire.
+   */
+  async scheduled(_event: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
+    if (!env.RELEASE_ROLL) return;
+    const pair = await readPair();
+    if (!detectDrift(pair, redirectVersionBound(redirects as Redirects)).drifted) return;
+    // get-then-create rather than trusting create's duplicate semantics: an
+    // instance already raised for this exact pair (see rollInstanceId) means
+    // there is nothing new to react to.
+    const id = rollInstanceId(pair);
+    const existing = await env.RELEASE_ROLL.get(id).catch(() => null);
+    if (!existing) await env.RELEASE_ROLL.create({ id, params: {} });
+  },
+
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const t0 = Date.now();
     if (req.method !== "GET" && req.method !== "HEAD") {
@@ -341,4 +374,88 @@ function log(
       }),
     ),
   );
+}
+
+/**
+ * The release-roll guard (docs/adr/0007). Lives here rather than beside its
+ * logic in workflows/release-roll.ts because a Workflow class must be exported
+ * from wrangler's `main`, and because that module is also loaded by
+ * `node --test`, which cannot resolve `cloudflare:workers`. Every decision in
+ * this body is a call into that module's pure, tested functions; this is
+ * binding plumbing only.
+ *
+ * Control flow between steps derives only from `event.payload` and step
+ * returns -- never wall-clock time -- because replays re-execute it.
+ */
+export class ReleaseRollWorkflow extends WorkflowEntrypoint<Env, ReleaseRollParams> {
+  async run(event: Readonly<WorkflowEvent<ReleaseRollParams>>, step: WorkflowStep) {
+    const env = this.env;
+    const p = { ...ROLL_DEFAULTS, ...event.payload };
+
+    const drift = await step.do("detect", async () => {
+      const pair = await readPair(p.originBase);
+      const bound = redirectVersionBound(redirects as Redirects);
+      return { pair, bound, ...detectDrift(pair, bound) };
+    });
+    if (!drift.drifted) return { outcome: "no-drift", ...drift };
+
+    // Only a pointer crosses the step boundary. The key list itself is
+    // unbounded and step outputs cap at 1 MiB.
+    //
+    // ponytail: one step, whole list in memory. ~129 LIST pages at 1000/page
+    // for the 129k case in #34 -- I/O-bound, well inside the step's 1 GB state
+    // and 30s *CPU* budget. If a prefix ever runs to millions, page into R2
+    // incrementally across several steps instead of buffering.
+    const plan = await step.do("plan-deletes", async () => {
+      const manifestKey = `_ops/release-roll/${event.instanceId}/deletes.txt`;
+      const keys: string[] = [];
+      for (const prefix of p.atRiskPrefixes ?? []) {
+        let cursor: string | undefined;
+        do {
+          const page = await env.BUCKET.list({ prefix, cursor });
+          for (const o of page.objects) keys.push(o.key);
+          cursor = page.truncated ? page.cursor : undefined;
+        } while (cursor);
+      }
+      await env.BUCKET.put(manifestKey, keys.join("\n"));
+      return { manifestKey, count: keys.length };
+    });
+
+    await step.do("alert-pending", () =>
+      notify(env.NOTIFY_URL, `release roll detected: devel ${drift.pair.devel}, redirects bound ${drift.bound}. ` +
+        `Missing versions: ${drift.missingRedirectVersions.join(", ")}. ` +
+        `${plan.count} objects would be deleted (${plan.manifestKey}).`));
+
+    // Buffered if the operator answers before we get here, so approving
+    // straight off the alert does not race the instance.
+    const approval = await step
+      .waitForEvent<Approval>("approval", { type: "release-roll-approval", timeout: p.approvalTimeout })
+      .then((e) => e.payload as Approval)
+      .catch(() => null); // timeout throws; an unanswered alert is not consent
+
+    const outcome = approvalOutcome(approval, plan.count, p.budget);
+    if (outcome.act === "alert") {
+      await step.do("alert-refused", () => notify(env.NOTIFY_URL, `release roll NOT applied: ${outcome.reason}`));
+      return { outcome: "refused", reason: outcome.reason, ...plan };
+    }
+
+    // "Apply" is a record, not an action. Nothing here runs rsync or deletes an
+    // object -- it publishes the approved decision, and the host-side sync is
+    // what would read it. That gate does not exist in sync.sh yet.
+    return await step.do("record-approval", async () => {
+      const key = "_ops/release-roll/approved.json";
+      const record = {
+        at: new Date().toISOString(),
+        instanceId: event.instanceId,
+        pair: drift.pair,
+        missingRedirectVersions: drift.missingRedirectVersions,
+        deletes: plan,
+        approval,
+      };
+      await env.BUCKET.put(key, JSON.stringify(record, null, 2), {
+        httpMetadata: { contentType: "application/json" },
+      });
+      return { outcome: "approved", key, reason: outcome.reason };
+    });
+  }
 }

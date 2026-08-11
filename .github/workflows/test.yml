@@ -32,6 +32,11 @@ jobs:
       - name: worker key mapping and link resolution
         run: node --test worker/test.ts
 
+      # The release-roll guard is inert and fires roughly twice a year, so a
+      # break in it surfaces six months after it ships unless CI holds it.
+      - name: release-roll guard logic
+        run: node --test worker/test-release-roll.ts
+
       # Exercises real rsync, no network: builds fixture trees, runs the
       # itemize parsing and the scope filter against them. The filter is the
       # one that fails quietly in both directions -- dropping wanted content,

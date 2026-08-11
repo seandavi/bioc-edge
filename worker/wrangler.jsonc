@@ -23,6 +23,19 @@
   // string as blob7. v1 and v2 stay queryable by name; only new rows land here.
   "analytics_engine_datasets": [{ "binding": "LOGS", "dataset": "bioc_site_requests_v3" }],
 
+  // The release-roll guard (docs/adr/0007). The entrypoint class is in
+  // src/index.ts (a Workflow class must be exported from `main`); its decision
+  // logic is in src/workflows/release-roll.ts where `node --test` can reach it.
+  "workflows": [
+    { "binding": "RELEASE_ROLL", "name": "bioc-release-roll", "class_name": "ReleaseRollWorkflow" }
+  ],
+
+  // The guard's clock. scheduled() reads the two 4-byte version files upstream
+  // and creates at most one Workflow instance per distinct pair; every other
+  // fire is a no-op. Cron Triggers do not retry a failed invocation, so the
+  // cadence is also the retry interval.
+  "triggers": { "crons": ["*/15 * * * *"] },
+
   "vars": { "NOT_FOUND_KEY": "help/404.html" },
 
   // custom_domain lets wrangler create the DNS record itself, rather than
