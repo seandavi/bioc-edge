@@ -6,6 +6,7 @@ Two timers, deliberately shipped as a pair.
 |---|---|---|
 | `bioc-sync` | hourly | `RSYNC_SRC=... ./sync.sh` — pull the delta, push what moved, purge those URLs |
 | `bioc-reconcile` | weekly | `RECONCILE=1 ./sync.sh` — `rclone check --checksum`, report drift |
+| `bioc-logpush-check` | daily 07:15 | `./check-logpush.sh` — fail if yesterday's UTC Logpush prefix in GCS is empty (ADR 0003: gaps are unrecoverable) |
 
 Both carry `OnFailure=bioc-notify@%N.service`, so a failed run files (or comments on)
 a GitHub issue titled `<unit> is failing` via `../notify-failure.sh` — full journal for
