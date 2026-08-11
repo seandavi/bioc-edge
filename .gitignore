@@ -29,3 +29,4 @@ astro/.astro/
 
 # Local-only exports (issue archives, findings). Never commit.
 *.local.md
+backfill-*.log
