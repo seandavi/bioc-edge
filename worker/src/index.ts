@@ -10,6 +10,7 @@ import {
   accessRecord,
   listablePrefix,
   packageShortUrl,
+  previewKeys,
   PKG_REPOS,
   renderIndex,
   resolveLinks,
@@ -105,6 +106,18 @@ export default {
     const url = new URL(req.url);
     const path = decodePath(url.pathname);
     if (path === null) return new Response("Bad Request", { status: 400 });
+
+    // PR previews bypass the redirect table, the symlink map and the edge
+    // cache: the prefix is rewritten on every push to the PR, so a cached
+    // preview page is exactly the stale artifact a reviewer must never see.
+    const preview = previewKeys(path);
+    if (preview) {
+      const { res } = await fromR2(req, env, preview);
+      const headers = new Headers(res.headers);
+      headers.set("cache-control", "no-cache");
+      log(env, ctx, req, res.status, "PREVIEW", res, t0);
+      return new Response(res.body, { status: res.status, headers });
+    }
 
     // Production answers many of these with a multi-hop chain that downgrades
     // to plaintext http along the way (MIGRATION.md, "Redirects"). One hop

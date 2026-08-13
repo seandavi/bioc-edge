@@ -13,6 +13,7 @@ import {
   redirectFor,
   listablePrefix,
   packageShortUrl,
+  previewKeys,
   renderIndex,
   accessRecord,
 } from "./src/keys.ts";
@@ -519,4 +520,22 @@ test("a full GET records the object size, since R2 bodies carry no length", () =
   // HEAD sends no body: charging it the object size would overstate transfer.
   const head = new Response(null, { status: 200 });
   assert.equal((accessRecord(REQ(), 200, "MISS", head, null, 611924) as Record<string, unknown>).sc_bytes, null);
+});
+
+test("preview paths map onto the PR's build prefix", () => {
+  assert.deepEqual(previewKeys("/_pr/5/"), ["preview/pr-5/index.html"]);
+  assert.deepEqual(previewKeys("/_pr/5"), ["preview/pr-5/index.html"]);
+  assert.deepEqual(previewKeys("/_pr/5/packages/3.24/bioc/html/limma.html"), [
+    "preview/pr-5/packages/3.24/bioc/html/limma.html",
+  ]);
+  // Extensionless segment = directory URL: page file first, then index.
+  assert.deepEqual(previewKeys("/_pr/12/next"), [
+    "preview/pr-12/next.html",
+    "preview/pr-12/next/index.html",
+  ]);
+  assert.deepEqual(previewKeys("/_pr/12/next/"), ["preview/pr-12/next/index.html"]);
+  // Not previews: no traversal out of the prefix, no non-numeric ids.
+  assert.equal(previewKeys("/packages/3.24/"), null);
+  assert.equal(previewKeys("/_pr/abc/x"), null);
+  assert.equal(previewKeys("/_pr/5/../secret"), null);
 });
