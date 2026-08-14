@@ -14,6 +14,7 @@ import {
   listablePrefix,
   packageShortUrl,
   previewKeys,
+  previewHref,
   renderIndex,
   accessRecord,
 } from "./src/keys.ts";
@@ -541,4 +542,16 @@ test("preview paths map onto the PR's build prefix", () => {
   assert.equal(previewKeys("/packages/3.24/"), null);
   assert.equal(previewKeys("/_pr/abc/x"), null);
   assert.equal(previewKeys("/_pr/5/../secret"), null);
+});
+
+test("preview link rewriting: root-absolute only, idempotent", () => {
+  assert.equal(previewHref("/packages/3.24/bioc/html/limma.html", "/_pr/1"), "/_pr/1/packages/3.24/bioc/html/limma.html");
+  assert.equal(previewHref("/", "/_pr/1"), "/_pr/1/");
+  assert.equal(previewHref("//cdn.example.org/x.js", "/_pr/1"), null);
+  assert.equal(previewHref("https://bioconductor.org/x", "/_pr/1"), null);
+  assert.equal(previewHref("#section", "/_pr/1"), null);
+  assert.equal(previewHref("relative/page.html", "/_pr/1"), null);
+  assert.equal(previewHref("/_pr/1/already.html", "/_pr/1"), null);
+  assert.equal(previewHref("/_pr/1", "/_pr/1"), null);
+  assert.equal(previewHref("/_pr/12/other.html", "/_pr/1"), "/_pr/1/_pr/12/other.html");
 });

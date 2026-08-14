@@ -10,6 +10,7 @@ import {
   accessRecord,
   listablePrefix,
   packageShortUrl,
+  previewHref,
   previewKeys,
   PKG_REPOS,
   renderIndex,
@@ -110,13 +111,33 @@ export default {
     // PR previews bypass the redirect table, the symlink map and the edge
     // cache: the prefix is rewritten on every push to the PR, so a cached
     // preview page is exactly the stale artifact a reviewer must never see.
+    // HTML gets its root-absolute links rewritten under /_pr/<n>/ so clicking
+    // through a preview stays in the preview (build output is unaware it is
+    // served from a subpath). JS-constructed URLs are not caught; that is the
+    // residual case wildcard-subdomain previews would close.
     const preview = previewKeys(path);
     if (preview) {
       const { res } = await fromR2(req, env, preview);
       const headers = new Headers(res.headers);
       headers.set("cache-control", "no-cache");
+      let out = new Response(res.body, { status: res.status, headers });
+      if (res.status === 200 && (headers.get("content-type") ?? "").includes("text/html")) {
+        const prefix = `/_pr/${/^\/_pr\/(\d+)/.exec(path)![1]}`;
+        const rewrite = (attr: string) => ({
+          element(el: { getAttribute(n: string): string | null; setAttribute(n: string, v: string): void }) {
+            const v = el.getAttribute(attr);
+            const next = v && previewHref(v, prefix);
+            if (next) el.setAttribute(attr, next);
+          },
+        });
+        out = new HTMLRewriter()
+          .on("a[href], link[href], area[href]", rewrite("href"))
+          .on("img[src], script[src], iframe[src], source[src]", rewrite("src"))
+          .on("form[action]", rewrite("action"))
+          .transform(out);
+      }
       log(env, ctx, req, res.status, "PREVIEW", res, t0);
-      return new Response(res.body, { status: res.status, headers });
+      return out;
     }
 
     // Production answers many of these with a multi-hop chain that downgrades

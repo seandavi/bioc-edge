@@ -467,6 +467,18 @@ export function previewKeys(path: string): string[] | null {
   return [`${base}${rest}.html`, `${base}${rest}/index.html`];
 }
 
+/**
+ * Rewrite one URL attribute for a preview page: root-absolute paths get the
+ * preview prefix so navigation stays inside the PR's build instead of
+ * escaping onto the mirrored legacy site. Everything else — external,
+ * protocol-relative, fragments, already-prefixed — returns null (leave as is).
+ */
+export function previewHref(value: string, prefix: string): string | null {
+  if (!value.startsWith("/") || value.startsWith("//")) return null;
+  if (value === prefix || value.startsWith(`${prefix}/`)) return null;
+  return prefix + value;
+}
+
 /** `Content-Range: bytes 0-99/1234` -> the CloudFront sc_range_start/end pair. */
 export function rangeOf(res: Response | null): { start: number; end: number } | null {
   const m = /^bytes (\d+)-(\d+)\//.exec(res?.headers.get("content-range") ?? "");
