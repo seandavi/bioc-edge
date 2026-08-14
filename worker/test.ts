@@ -535,6 +535,10 @@ test("preview paths map onto the PR's build prefix", () => {
     "preview/pr-12/next.html",
     "preview/pr-12/next/index.html",
   ]);
+  // Pagefind's index files have underscores in their extensions.
+  assert.deepEqual(previewKeys("/_pr/9/pagefind/pagefind.en_869797bfe1.pf_meta"), [
+    "preview/pr-9/pagefind/pagefind.en_869797bfe1.pf_meta",
+  ]);
   assert.deepEqual(previewKeys("/_pr/12/next/"), [
     "preview/pr-12/next/index.html",
     "preview/pr-12/next.html",
