@@ -462,7 +462,7 @@ export function previewKeys(path: string, links: Links = {}): string[] | null {
   const cands =
     rest === "" || rest.endsWith("/")
       ? [`${rest}index.html`, ...(rest ? [`${rest.slice(0, -1)}.html`] : [])]
-      : /\.[A-Za-z0-9]+$/.test(rest.split("/").pop()!)
+      : /\.[A-Za-z0-9_-]+$/.test(rest.split("/").pop()!)
         ? [rest]
         : [`${rest}.html`, `${rest}/index.html`];
   // Builds emit real versions (packages/3.23/...), never the release/devel
