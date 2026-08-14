@@ -440,6 +440,53 @@ function bytesOf(res: Response | null, size: number | null): number | null {
   return null;
 }
 
+/**
+ * PR preview builds: bioconductor-website CI publishes each pull request's
+ * Astro build under `preview/pr-<n>/` and deletes it when the PR closes.
+ * `/_pr/<n>/...` serves that prefix. Pages are real `.html` files (Astro
+ * `build.format: 'file'`), so an extensionless segment is a directory URL:
+ * try `<path>.html` first, then `<path>/index.html`.
+ *
+ * ponytail: path-based previews; internal root-absolute links escape to the
+ * mirrored legacy site. Wildcard-subdomain previews when a DNS-capable token
+ * exists (bioconductor-website issue tracker).
+ */
+export function previewKeys(path: string, links: Links = {}): string[] | null {
+  const m = /^\/_pr\/(\d{1,6})(\/.*)?$/.exec(path);
+  if (!m) return null;
+  const rest = (m[2] ?? "/").slice(1);
+  // R2 keys are literal so `..` cannot traverse, but reject it anyway: a key
+  // containing dot segments can only be a probe, never a build artifact.
+  if (rest.split("/").some((s) => s === "." || s === "..")) return null;
+  const base = `preview/pr-${m[1]}/`;
+  const cands =
+    rest === "" || rest.endsWith("/")
+      ? [`${rest}index.html`, ...(rest ? [`${rest.slice(0, -1)}.html`] : [])]
+      : /\.[A-Za-z0-9]+$/.test(rest.split("/").pop()!)
+        ? [rest]
+        : [`${rest}.html`, `${rest}/index.html`];
+  // Builds emit real versions (packages/3.23/...), never the release/devel
+  // aliases, so resolve the symlink map before looking in the build prefix.
+  return cands.map((c) => base + resolveLinks(c, links));
+}
+
+/** The site-root path inside a preview URL: "/_pr/5/news/" -> "/news/". */
+export function previewRest(path: string): string {
+  return /^\/_pr\/\d{1,6}(\/.*)?$/.exec(path)?.[1] ?? "/";
+}
+
+/**
+ * Rewrite one URL attribute for a preview page: root-absolute paths get the
+ * preview prefix so navigation stays inside the PR's build instead of
+ * escaping onto the mirrored legacy site. Everything else — external,
+ * protocol-relative, fragments, already-prefixed — returns null (leave as is).
+ */
+export function previewHref(value: string, prefix: string): string | null {
+  if (!value.startsWith("/") || value.startsWith("//")) return null;
+  if (value === prefix || value.startsWith(`${prefix}/`)) return null;
+  return prefix + value;
+}
+
 /** `Content-Range: bytes 0-99/1234` -> the CloudFront sc_range_start/end pair. */
 export function rangeOf(res: Response | null): { start: number; end: number } | null {
   const m = /^bytes (\d+)-(\d+)\//.exec(res?.headers.get("content-range") ?? "");

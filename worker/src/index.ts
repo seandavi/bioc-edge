@@ -10,6 +10,9 @@ import {
   accessRecord,
   listablePrefix,
   packageShortUrl,
+  previewHref,
+  previewKeys,
+  previewRest,
   PKG_REPOS,
   renderIndex,
   resolveLinks,
@@ -105,6 +108,47 @@ export default {
     const url = new URL(req.url);
     const path = decodePath(url.pathname);
     if (path === null) return new Response("Bad Request", { status: 400 });
+
+    // PR previews bypass the redirect table, the symlink map and the edge
+    // cache: the prefix is rewritten on every push to the PR, so a cached
+    // preview page is exactly the stale artifact a reviewer must never see.
+    // HTML gets its root-absolute links rewritten under /_pr/<n>/ so clicking
+    // through a preview stays in the preview (build output is unaware it is
+    // served from a subpath). JS-constructed URLs are not caught; that is the
+    // residual case wildcard-subdomain previews would close.
+    const preview = previewKeys(path, await symlinks(env));
+    if (preview) {
+      let { res } = await fromR2(req, env, preview);
+      // Pages the PR build does not contain — legacy mirror content, other
+      // releases, checkResults — fall through to the production resolution,
+      // so a reviewer can navigate the whole site without leaving the
+      // preview. The link rewrite below applies to that HTML too, keeping
+      // navigation inside /_pr/<n>/ either way.
+      if (res.status === 404) {
+        const fallback = candidates(previewRest(path), await symlinks(env));
+        ({ res } = await fromR2(req, env, fallback));
+      }
+      const headers = new Headers(res.headers);
+      headers.set("cache-control", "no-cache");
+      let out = new Response(res.body, { status: res.status, headers });
+      if (res.status === 200 && (headers.get("content-type") ?? "").includes("text/html")) {
+        const prefix = `/_pr/${/^\/_pr\/(\d+)/.exec(path)![1]}`;
+        const rewrite = (attr: string) => ({
+          element(el: { getAttribute(n: string): string | null; setAttribute(n: string, v: string): void }) {
+            const v = el.getAttribute(attr);
+            const next = v && previewHref(v, prefix);
+            if (next) el.setAttribute(attr, next);
+          },
+        });
+        out = new HTMLRewriter()
+          .on("a[href], link[href], area[href]", rewrite("href"))
+          .on("img[src], script[src], iframe[src], source[src]", rewrite("src"))
+          .on("form[action]", rewrite("action"))
+          .transform(out);
+      }
+      log(env, ctx, req, res.status, "PREVIEW", res, t0);
+      return out;
+    }
 
     // Production answers many of these with a multi-hop chain that downgrades
     // to plaintext http along the way (MIGRATION.md, "Redirects"). One hop

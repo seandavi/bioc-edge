@@ -13,6 +13,9 @@ import {
   redirectFor,
   listablePrefix,
   packageShortUrl,
+  previewKeys,
+  previewHref,
+  previewRest,
   renderIndex,
   accessRecord,
 } from "./src/keys.ts";
@@ -519,4 +522,47 @@ test("a full GET records the object size, since R2 bodies carry no length", () =
   // HEAD sends no body: charging it the object size would overstate transfer.
   const head = new Response(null, { status: 200 });
   assert.equal((accessRecord(REQ(), 200, "MISS", head, null, 611924) as Record<string, unknown>).sc_bytes, null);
+});
+
+test("preview paths map onto the PR's build prefix", () => {
+  assert.deepEqual(previewKeys("/_pr/5/"), ["preview/pr-5/index.html"]);
+  assert.deepEqual(previewKeys("/_pr/5"), ["preview/pr-5/index.html"]);
+  assert.deepEqual(previewKeys("/_pr/5/packages/3.24/bioc/html/limma.html"), [
+    "preview/pr-5/packages/3.24/bioc/html/limma.html",
+  ]);
+  // Extensionless segment = directory URL: page file first, then index.
+  assert.deepEqual(previewKeys("/_pr/12/next"), [
+    "preview/pr-12/next.html",
+    "preview/pr-12/next/index.html",
+  ]);
+  assert.deepEqual(previewKeys("/_pr/12/next/"), [
+    "preview/pr-12/next/index.html",
+    "preview/pr-12/next.html",
+  ]);
+  // Not previews: no traversal out of the prefix, no non-numeric ids.
+  assert.equal(previewKeys("/packages/3.24/"), null);
+  assert.equal(previewKeys("/_pr/abc/x"), null);
+  assert.equal(previewKeys("/_pr/5/../secret"), null);
+});
+
+test("preview link rewriting: root-absolute only, idempotent", () => {
+  assert.equal(previewHref("/packages/3.24/bioc/html/limma.html", "/_pr/1"), "/_pr/1/packages/3.24/bioc/html/limma.html");
+  assert.equal(previewHref("/", "/_pr/1"), "/_pr/1/");
+  assert.equal(previewHref("//cdn.example.org/x.js", "/_pr/1"), null);
+  assert.equal(previewHref("https://bioconductor.org/x", "/_pr/1"), null);
+  assert.equal(previewHref("#section", "/_pr/1"), null);
+  assert.equal(previewHref("relative/page.html", "/_pr/1"), null);
+  assert.equal(previewHref("/_pr/1/already.html", "/_pr/1"), null);
+  assert.equal(previewHref("/_pr/1", "/_pr/1"), null);
+  assert.equal(previewHref("/_pr/12/other.html", "/_pr/1"), "/_pr/1/_pr/12/other.html");
+});
+
+test("preview keys resolve symlink aliases; previewRest strips the prefix", () => {
+  assert.deepEqual(
+    previewKeys("/_pr/5/packages/release/bioc/html/limma.html", LINKS),
+    ["preview/pr-5/packages/3.23/bioc/html/limma.html"],
+  );
+  assert.equal(previewRest("/_pr/5/news/"), "/news/");
+  assert.equal(previewRest("/_pr/5"), "/");
+  assert.equal(previewRest("/_pr/5/checkResults/"), "/checkResults/");
 });
