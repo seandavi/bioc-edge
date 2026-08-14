@@ -12,6 +12,7 @@ import {
   packageShortUrl,
   previewHref,
   previewKeys,
+  previewRest,
   PKG_REPOS,
   renderIndex,
   resolveLinks,
@@ -115,9 +116,18 @@ export default {
     // through a preview stays in the preview (build output is unaware it is
     // served from a subpath). JS-constructed URLs are not caught; that is the
     // residual case wildcard-subdomain previews would close.
-    const preview = previewKeys(path);
+    const preview = previewKeys(path, await symlinks(env));
     if (preview) {
-      const { res } = await fromR2(req, env, preview);
+      let { res } = await fromR2(req, env, preview);
+      // Pages the PR build does not contain — legacy mirror content, other
+      // releases, checkResults — fall through to the production resolution,
+      // so a reviewer can navigate the whole site without leaving the
+      // preview. The link rewrite below applies to that HTML too, keeping
+      // navigation inside /_pr/<n>/ either way.
+      if (res.status === 404) {
+        const fallback = candidates(previewRest(path), await symlinks(env));
+        ({ res } = await fromR2(req, env, fallback));
+      }
       const headers = new Headers(res.headers);
       headers.set("cache-control", "no-cache");
       let out = new Response(res.body, { status: res.status, headers });

@@ -451,7 +451,7 @@ function bytesOf(res: Response | null, size: number | null): number | null {
  * mirrored legacy site. Wildcard-subdomain previews when a DNS-capable token
  * exists (bioconductor-website issue tracker).
  */
-export function previewKeys(path: string): string[] | null {
+export function previewKeys(path: string, links: Links = {}): string[] | null {
   const m = /^\/_pr\/(\d{1,6})(\/.*)?$/.exec(path);
   if (!m) return null;
   const rest = (m[2] ?? "/").slice(1);
@@ -459,12 +459,20 @@ export function previewKeys(path: string): string[] | null {
   // containing dot segments can only be a probe, never a build artifact.
   if (rest.split("/").some((s) => s === "." || s === "..")) return null;
   const base = `preview/pr-${m[1]}/`;
-  if (rest === "") return [`${base}index.html`];
-  // Astro's 'file' format renders pages/foo/index.astro as foo.html, so a
-  // trailing-slash URL may be either shape.
-  if (rest.endsWith("/")) return [`${base}${rest}index.html`, `${base}${rest.slice(0, -1)}.html`];
-  if (/\.[A-Za-z0-9]+$/.test(rest.split("/").pop()!)) return [base + rest];
-  return [`${base}${rest}.html`, `${base}${rest}/index.html`];
+  const cands =
+    rest === "" || rest.endsWith("/")
+      ? [`${rest}index.html`, ...(rest ? [`${rest.slice(0, -1)}.html`] : [])]
+      : /\.[A-Za-z0-9]+$/.test(rest.split("/").pop()!)
+        ? [rest]
+        : [`${rest}.html`, `${rest}/index.html`];
+  // Builds emit real versions (packages/3.23/...), never the release/devel
+  // aliases, so resolve the symlink map before looking in the build prefix.
+  return cands.map((c) => base + resolveLinks(c, links));
+}
+
+/** The site-root path inside a preview URL: "/_pr/5/news/" -> "/news/". */
+export function previewRest(path: string): string {
+  return /^\/_pr\/\d{1,6}(\/.*)?$/.exec(path)?.[1] ?? "/";
 }
 
 /**

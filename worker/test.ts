@@ -15,6 +15,7 @@ import {
   packageShortUrl,
   previewKeys,
   previewHref,
+  previewRest,
   renderIndex,
   accessRecord,
 } from "./src/keys.ts";
@@ -554,4 +555,14 @@ test("preview link rewriting: root-absolute only, idempotent", () => {
   assert.equal(previewHref("/_pr/1/already.html", "/_pr/1"), null);
   assert.equal(previewHref("/_pr/1", "/_pr/1"), null);
   assert.equal(previewHref("/_pr/12/other.html", "/_pr/1"), "/_pr/1/_pr/12/other.html");
+});
+
+test("preview keys resolve symlink aliases; previewRest strips the prefix", () => {
+  assert.deepEqual(
+    previewKeys("/_pr/5/packages/release/bioc/html/limma.html", LINKS),
+    ["preview/pr-5/packages/3.23/bioc/html/limma.html"],
+  );
+  assert.equal(previewRest("/_pr/5/news/"), "/news/");
+  assert.equal(previewRest("/_pr/5"), "/");
+  assert.equal(previewRest("/_pr/5/checkResults/"), "/checkResults/");
 });
