@@ -144,6 +144,9 @@ export default {
           .on("a[href], link[href], area[href]", rewrite("href"))
           .on("img[src], script[src], iframe[src], source[src]", rewrite("src"))
           .on("form[action]", rewrite("action"))
+          // Astro islands load their code from these attributes, not src.
+          .on("astro-island[component-url]", rewrite("component-url"))
+          .on("astro-island[renderer-url]", rewrite("renderer-url"))
           .transform(out);
       }
       log(env, ctx, req, res.status, "PREVIEW", res, t0);
