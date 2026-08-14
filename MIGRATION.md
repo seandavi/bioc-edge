@@ -641,6 +641,45 @@ never a deploy:
   is flipped. No `_routes.json`, or an empty `prefixes`, means the mirror serves
   everything — the safe default.
 
+### The transition process
+
+The route table turns the Astro cutover from one event into a per-prefix loop: the
+mirror stays the default, each prefix moves when it is ready, and a wrong flip reverts
+in ≤ 60 s with an object write. Per prefix:
+
+1. **Verify on staging.** Browse the prefix under `/_latest/` — the same build, at its
+   final URLs. For a prefix worth the rigor, crawl `/_latest/<prefix>` against
+   production `<prefix>` (the `cutover-diff.sh` pattern: status codes per URL). Astro
+   pages differ from nanoc's by design, so the gate is *completeness* — every
+   production URL under the prefix answers — not byte identity (§Behavioural equality
+   does not apply across the rewrite).
+2. **Flip.** Add the prefix to `_routes.json` (runbook above).
+3. **Verify live.** Flipped URLs carry `x-bioc-build`; the sha matches `site/latest`.
+   Watch Analytics Engine for a 404 uptick on the prefix — fallthrough hides a missing
+   page from users only when the mirror has it, and a page neither has now 404s where
+   it didn't before.
+4. **Roll back if wrong.** Remove the prefix; or pin `"build"` to the last good sha if
+   the problem is a bad build rather than a bad flip.
+
+Sequencing, lowest risk first: content-only low-traffic prefixes (`/about/`, `/help/`),
+then higher-traffic page prefixes (`/news/`, `/developers/`), then the `/packages/…`
+HTML surfaces (landing pages, BiocViews) once the finder/search work is merged — those
+interact with the symlink map, which `routedKeys` already resolves the same way
+previews do.
+
+**The table claims page prefixes only — never the install path.** Tarballs,
+`PACKAGES`/`VIEWS`, `checkResults/`, and frozen releases are not in the build, and
+flipping a prefix over them buys nothing while costing real money: a routed path
+edge-caches only build keys, so mirror content under a flipped prefix is served from
+R2 on every request. For the same reason the endgame is *every page prefix flipped*,
+not `"/"` flipped — a root flip would strip edge caching from exactly the
+high-volume download traffic the cache exists for.
+
+Endgame, in order (ADR 0008): all mutable page routes flipped and boring → one-time
+ERB-resolved content import lands in bioconductor-website and the nanoc repo freezes →
+DNS cutover (#76) → sync host retires (#80) once the bucket plus upstream are the
+sources of record for everything it still copies.
+
 ## Cache
 
 The whole site is static and changes only when rclone syncs. So: **cache at the edge
