@@ -13,12 +13,18 @@ import {
   previewHref,
   previewKeys,
   previewRest,
+  buildKeys,
+  routedKeys,
+  stagingPath,
   PKG_REPOS,
   renderIndex,
   resolveLinks,
   LINKS_KEY,
+  ROUTES_KEY,
+  LATEST_KEY,
   type Links,
   type Redirects,
+  type Routes,
 } from "./keys.ts";
 import redirects from "./redirects.json";
 import { WorkflowEntrypoint, type WorkflowStep, type WorkflowEvent } from "cloudflare:workers";
@@ -44,37 +50,53 @@ interface Env {
 }
 
 /**
- * The symlink map is upstream state, not configuration: `bioc-LATEST` links
- * move nightly and `contrib/` aliases appear whenever an R version rolls, so
- * checking it into the repo would mean a deploy per upstream change. sync.sh
- * regenerates it from the mirror on every pull and publishes it here.
+ * Small R2 objects the Worker steers by — upstream state, not configuration,
+ * so checking them into the repo would mean a deploy per change. sync.sh
+ * publishes the symlink map on every pull; site CI moves `site/latest`; an
+ * operator writes `_routes.json` to flip a strangler route.
  *
  * Memoised per isolate rather than per request. Isolates are reused across
  * many requests, so this is roughly one Class B op per isolate per TTL. The
- * TTL is the lag between a release roll landing in the bucket and the Worker
+ * TTL is the lag between a write landing in the bucket and the Worker
  * following it.
+ *
+ * The *absence* of the object is cached too. Storing only successes means a
+ * missing object never populates the cache, so every subsequent request
+ * re-fetches it -- and this runs before the cache lookup, so that is an
+ * R2 round trip on the hot path of every request including cache hits.
+ * Measured: 146-159ms TTFB against 44-50ms once the map resolves.
+ *
+ * A read failure is different from a genuine absence: keep the last good
+ * value rather than replacing it with nothing, which for the symlink map
+ * would 404 every /packages/release/ URL on the site. Only back off from
+ * retrying every request if we have something to serve meanwhile.
  */
-const LINKS_TTL_MS = 300_000;
-let linksCache: { at: number; map: Links } | null = null;
+function bucketCache<T>(key: string, parse: (o: R2ObjectBody) => Promise<T>, ttl = 300_000) {
+  let cache: { at: number; v: T | null } | null = null;
+  return async (env: Env): Promise<T | null> => {
+    if (cache && Date.now() - cache.at < ttl) return cache.v;
+    try {
+      const obj = await env.BUCKET.get(key);
+      cache = { at: Date.now(), v: obj ? await parse(obj) : null };
+    } catch {
+      if (cache) cache = { at: Date.now(), v: cache.v };
+    }
+    return cache?.v ?? null;
+  };
+}
 
-async function symlinks(env: Env): Promise<Links> {
-  if (linksCache && Date.now() - linksCache.at < LINKS_TTL_MS) return linksCache.map;
-  try {
-    const obj = await env.BUCKET.get(LINKS_KEY);
-    // Cache the *absence* of the map too. Storing only successes means a
-    // missing object never populates the cache, so every subsequent request
-    // re-fetches it -- and this runs before the cache lookup, so that is an
-    // R2 round trip on the hot path of every request including cache hits.
-    // Measured: 146-159ms TTFB against 44-50ms once the map resolves.
-    linksCache = { at: Date.now(), map: obj ? await obj.json<Links>() : {} };
-  } catch {
-    // A read failure is different from a genuine absence: keep the last good
-    // map rather than replacing it with an empty one, which would 404 every
-    // /packages/release/ URL on the site. Only back off from retrying every
-    // request if we have something to serve meanwhile.
-    if (linksCache) linksCache = { at: Date.now(), map: linksCache.map };
-  }
-  return linksCache?.map ?? {};
+const linksMap = bucketCache(LINKS_KEY, (o) => o.json<Links>());
+const symlinks = async (env: Env): Promise<Links> => (await linksMap(env)) ?? {};
+// 60s, not 300: this TTL is how long a route flip -- and more importantly a
+// rollback -- takes to reach every isolate.
+const routesTable = bucketCache(ROUTES_KEY, (o) => o.json<Routes>(), 60_000);
+const latestSha = bucketCache(LATEST_KEY, async (o) => (await o.text()).trim(), 60_000);
+
+/** The build sha the route table currently points at, or null if unset. */
+async function buildSha(env: Env, routes: Routes | null): Promise<string | null> {
+  if (!routes?.prefixes?.length) return null;
+  if (routes.build && routes.build !== "latest") return routes.build;
+  return latestSha(env);
 }
 
 export default {
@@ -116,7 +138,19 @@ export default {
     // through a preview stays in the preview (build output is unaware it is
     // served from a subpath). JS-constructed URLs are not caught; that is the
     // residual case wildcard-subdomain previews would close.
-    const preview = previewKeys(path, await symlinks(env));
+    const links = await symlinks(env);
+    let preview = previewKeys(path, links);
+    let previewPrefix = preview ? `/_pr/${/^\/_pr\/(\d+)/.exec(path)![1]}` : null;
+    // /_latest/ is the staging view of the same machinery: the build CI last
+    // published, at its final URLs, before any prefix is flipped to it. No
+    // pointer yet (site/latest unwritten) falls through to the mirror's 404.
+    if (!preview && stagingPath(path)) {
+      const sha = await latestSha(env);
+      if (sha) {
+        preview = buildKeys(previewRest(path), `site/${sha}/`, links);
+        previewPrefix = "/_latest";
+      }
+    }
     if (preview) {
       let { res } = await fromR2(req, env, preview);
       // Pages the PR build does not contain — legacy mirror content, other
@@ -125,14 +159,14 @@ export default {
       // preview. The link rewrite below applies to that HTML too, keeping
       // navigation inside /_pr/<n>/ either way.
       if (res.status === 404) {
-        const fallback = candidates(previewRest(path), await symlinks(env));
+        const fallback = candidates(previewRest(path), links);
         ({ res } = await fromR2(req, env, fallback));
       }
       const headers = new Headers(res.headers);
       headers.set("cache-control", "no-cache");
       let out = new Response(res.body, { status: res.status, headers });
       if (res.status === 200 && (headers.get("content-type") ?? "").includes("text/html")) {
-        const prefix = `/_pr/${/^\/_pr\/(\d+)/.exec(path)![1]}`;
+        const prefix = previewPrefix!;
         const rewrite = (attr: string) => ({
           element(el: { getAttribute(n: string): string | null; setAttribute(n: string, v: string): void }) {
             const v = el.getAttribute(attr);
@@ -171,13 +205,26 @@ export default {
     // cache to keep the 206 path simple.
     const ranged = req.headers.has("range");
     const cache = caches.default;
-    const keys = candidates(path, await symlinks(env));
+    const mirror = candidates(path, links);
+
+    // The strangler route table: a flipped prefix tries the Astro build's
+    // keys first, with the mirror candidates still behind them so pages the
+    // build lacks fall through. Keys carry the sha, so moving the pointer --
+    // or rolling back -- invalidates the edge cache by construction.
+    const routes = await routesTable(env);
+    const sha = await buildSha(env, routes);
+    const routed = routes && sha ? routedKeys(path, routes, sha, links) : null;
+    const keys = routed ? [...routed, ...mirror] : mirror;
 
     // Entries are keyed by resolved object, not request URL, so at most a
     // couple of local lookups -- and /help/, /help and /help/index.html all
-    // land on the same one.
+    // land on the same one. On a routed path only the build keys are matched:
+    // a mirror entry cached before the flip must not shadow the page the
+    // build now owns. Fallthrough pages under a flipped prefix therefore skip
+    // the edge cache -- the minority case, and it shrinks as build coverage
+    // grows.
     if (!ranged) {
-      for (const key of keys) {
+      for (const key of routed ?? keys) {
         const hit = await cache.match(cacheUrl(url.origin, key));
         if (hit) {
           if (notModified(req, hit)) {
@@ -241,6 +288,9 @@ async function fromR2(
     headers.set("last-modified", obj.uploaded.toUTCString());
     headers.set("accept-ranges", "bytes");
     headers.set("cache-control", cacheControl(key));
+    // Which Astro build answered, when one did -- the observable a route flip
+    // is verified and debugged by. Absent on mirror-served responses.
+    if (key.startsWith("site/")) headers.set("x-bioc-build", key.split("/")[1]);
 
     // No body means a precondition failed. If-None-Match/If-Modified-Since
     // failing means "unchanged" (304); If-Match/If-Unmodified-Since failing
