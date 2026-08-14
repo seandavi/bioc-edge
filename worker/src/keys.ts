@@ -459,7 +459,10 @@ export function previewKeys(path: string): string[] | null {
   // containing dot segments can only be a probe, never a build artifact.
   if (rest.split("/").some((s) => s === "." || s === "..")) return null;
   const base = `preview/pr-${m[1]}/`;
-  if (rest === "" || rest.endsWith("/")) return [`${base}${rest}index.html`];
+  if (rest === "") return [`${base}index.html`];
+  // Astro's 'file' format renders pages/foo/index.astro as foo.html, so a
+  // trailing-slash URL may be either shape.
+  if (rest.endsWith("/")) return [`${base}${rest}index.html`, `${base}${rest.slice(0, -1)}.html`];
   if (/\.[A-Za-z0-9]+$/.test(rest.split("/").pop()!)) return [base + rest];
   return [`${base}${rest}.html`, `${base}${rest}/index.html`];
 }

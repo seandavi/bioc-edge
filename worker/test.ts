@@ -533,7 +533,10 @@ test("preview paths map onto the PR's build prefix", () => {
     "preview/pr-12/next.html",
     "preview/pr-12/next/index.html",
   ]);
-  assert.deepEqual(previewKeys("/_pr/12/next/"), ["preview/pr-12/next/index.html"]);
+  assert.deepEqual(previewKeys("/_pr/12/next/"), [
+    "preview/pr-12/next/index.html",
+    "preview/pr-12/next.html",
+  ]);
   // Not previews: no traversal out of the prefix, no non-numeric ids.
   assert.equal(previewKeys("/packages/3.24/"), null);
   assert.equal(previewKeys("/_pr/abc/x"), null);
