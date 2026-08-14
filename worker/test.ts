@@ -16,6 +16,9 @@ import {
   previewKeys,
   previewHref,
   previewRest,
+  buildKeys,
+  routedKeys,
+  stagingPath,
   renderIndex,
   accessRecord,
 } from "./src/keys.ts";
@@ -569,4 +572,40 @@ test("preview keys resolve symlink aliases; previewRest strips the prefix", () =
   assert.equal(previewRest("/_pr/5/news/"), "/news/");
   assert.equal(previewRest("/_pr/5"), "/");
   assert.equal(previewRest("/_pr/5/checkResults/"), "/checkResults/");
+});
+
+test("route table: flipped prefixes map onto the build, everything else stays null", () => {
+  const routes = { prefixes: ["/help/", "/about/"] };
+  assert.deepEqual(routedKeys("/help/", routes, "abc123"), ["site/abc123/help/index.html", "site/abc123/help.html"]);
+  // A prefix owns everything beneath it, and the slashless directory form.
+  assert.deepEqual(routedKeys("/help/faq", routes, "abc123"), [
+    "site/abc123/help/faq.html",
+    "site/abc123/help/faq/index.html",
+  ]);
+  assert.deepEqual(routedKeys("/help", routes, "abc123"), ["site/abc123/help.html", "site/abc123/help/index.html"]);
+  // Not flipped: the mirror keeps it.
+  assert.equal(routedKeys("/packages/release/", routes, "abc123"), null);
+  assert.equal(routedKeys("/helpless", routes, "abc123"), null);
+  // No sha, or nothing flipped: nothing routed.
+  assert.equal(routedKeys("/help/", routes, ""), null);
+  assert.equal(routedKeys("/help/", { prefixes: [] }, "abc123"), null);
+  // Symlink aliases resolve before the build prefix, same as previews.
+  assert.deepEqual(
+    routedKeys("/packages/release/bioc/html/limma.html", { prefixes: ["/packages/"] }, "abc123", LINKS),
+    ["site/abc123/packages/3.23/bioc/html/limma.html"],
+  );
+});
+
+test("staging: /_latest rides the preview machinery", () => {
+  assert.equal(stagingPath("/_latest/"), true);
+  assert.equal(stagingPath("/_latest"), true);
+  assert.equal(stagingPath("/_latest/news/"), true);
+  assert.equal(stagingPath("/_latests"), false);
+  assert.equal(previewRest("/_latest/news/"), "/news/");
+  assert.equal(previewRest("/_latest"), "/");
+  assert.deepEqual(buildKeys("/news/", "site/abc123/", {}), [
+    "site/abc123/news/index.html",
+    "site/abc123/news.html",
+  ]);
+  assert.equal(buildKeys("/../secret", "site/abc123/", {}), null);
 });

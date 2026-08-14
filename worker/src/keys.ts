@@ -454,17 +454,26 @@ function bytesOf(res: Response | null, size: number | null): number | null {
 export function previewKeys(path: string, links: Links = {}): string[] | null {
   const m = /^\/_pr\/(\d{1,6})(\/.*)?$/.exec(path);
   if (!m) return null;
-  const rest = (m[2] ?? "/").slice(1);
+  return buildKeys(m[2] ?? "/", `preview/pr-${m[1]}/`, links);
+}
+
+/**
+ * URL path (site-root form, leading slash) -> candidate keys inside an Astro
+ * build prefix (`preview/pr-<n>/` or `site/<sha>/`). Pages are real `.html`
+ * files (Astro `build.format: 'file'`), so an extensionless segment is a
+ * directory URL: try `<path>.html` first, then `<path>/index.html`.
+ */
+export function buildKeys(rest: string, base: string, links: Links = {}): string[] | null {
+  const r = rest.replace(/^\//, "");
   // R2 keys are literal so `..` cannot traverse, but reject it anyway: a key
   // containing dot segments can only be a probe, never a build artifact.
-  if (rest.split("/").some((s) => s === "." || s === "..")) return null;
-  const base = `preview/pr-${m[1]}/`;
+  if (r.split("/").some((s) => s === "." || s === "..")) return null;
   const cands =
-    rest === "" || rest.endsWith("/")
-      ? [`${rest}index.html`, ...(rest ? [`${rest.slice(0, -1)}.html`] : [])]
-      : /\.[A-Za-z0-9_-]+$/.test(rest.split("/").pop()!)
-        ? [rest]
-        : [`${rest}.html`, `${rest}/index.html`];
+    r === "" || r.endsWith("/")
+      ? [`${r}index.html`, ...(r ? [`${r.slice(0, -1)}.html`] : [])]
+      : /\.[A-Za-z0-9_-]+$/.test(r.split("/").pop()!)
+        ? [r]
+        : [`${r}.html`, `${r}/index.html`];
   // Builds emit real versions (packages/3.23/...), never the release/devel
   // aliases, so resolve the symlink map before looking in the build prefix.
   return cands.map((c) => base + resolveLinks(c, links));
@@ -472,7 +481,56 @@ export function previewKeys(path: string, links: Links = {}): string[] | null {
 
 /** The site-root path inside a preview URL: "/_pr/5/news/" -> "/news/". */
 export function previewRest(path: string): string {
-  return /^\/_pr\/\d{1,6}(\/.*)?$/.exec(path)?.[1] ?? "/";
+  return /^\/(?:_pr\/\d{1,6}|_latest)(\/.*)?$/.exec(path)?.[1] ?? "/";
+}
+
+/**
+ * The staging view: `/_latest/...` serves the build `site/latest` points at,
+ * through the same serving path as a PR preview (link rewriting, no-cache,
+ * mirror fallthrough). The whole new site is browsable at its final URLs
+ * before any prefix is flipped to it — previews/staging via prefix pointers,
+ * no new infra (docs/adr/0008).
+ */
+export function stagingPath(path: string): boolean {
+  return /^\/_latest(\/|$)/.test(path);
+}
+
+/**
+ * The strangler route table (docs/adr/0008): which URL prefixes the Astro
+ * build owns, everything else stays on the mirror. Data in R2, not code, so a
+ * flip — or a rollback — is an object write, never a deploy.
+ *
+ *   { "build": "latest", "prefixes": ["/help/", "/about/"] }
+ *
+ * `build` is `"latest"` (follow the `site/latest` pointer CI moves on every
+ * main push) or a pinned sha — pinning is the one-line rollback when a bad
+ * build lands in `latest`. No table object, or an empty prefix list, means
+ * nothing is flipped: the mirror serves everything, which is the safe default.
+ */
+export const ROUTES_KEY = "_routes.json";
+export const LATEST_KEY = "site/latest";
+
+export interface Routes {
+  build?: string;
+  prefixes: string[];
+}
+
+/**
+ * Candidate keys inside `site/<sha>/` when the path is under a flipped
+ * prefix, else null. A table prefix owns everything beneath it; `/help/`
+ * also claims the slashless `/help`, which the mirror answers with the same
+ * page. Prepended to the mirror candidates rather than replacing them, so a
+ * page the build does not contain falls through to production resolution —
+ * a flip never has to wait for full coverage of its prefix.
+ */
+export function routedKeys(
+  path: string,
+  routes: Routes,
+  sha: string,
+  links: Links = {},
+): string[] | null {
+  if (!sha || !routes.prefixes.some((p) => path.startsWith(p) || path + "/" === p)) return null;
+  return buildKeys(path, `site/${sha}/`, links);
 }
 
 /**

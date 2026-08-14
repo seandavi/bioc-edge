@@ -616,6 +616,31 @@ None of this is hard — it is about 80 lines — but all three are free with a 
 and must be written correctly with a binding. `worker/test.ts` covers the key-mapping
 logic (`node --test worker/test.ts`, no framework, no build step).
 
+## Route table — the strangler mechanism (ADR 0008)
+
+bioconductor-website CI publishes every main-branch build immutably under `site/<sha>/`
+and writes the sha to `site/latest`. Which URL prefixes that build serves — versus the
+mirror — is an R2 object, `_routes.json`, so a flip or a rollback is an object write,
+never a deploy:
+
+```json
+{ "build": "latest", "prefixes": ["/help/", "/about/"] }
+```
+
+- **Flip a route**: add its prefix and
+  `npx wrangler r2 object put bioc-site/_routes.json --file routes.json --remote`.
+  Isolates follow within 60 s. A prefix owns everything beneath it; pages the build
+  does not contain fall through to the mirror, so a flip never waits for full coverage.
+- **Roll back a route**: remove the prefix. **Roll back a bad build**: pin
+  `"build": "<known-good sha>"` — `"latest"` means follow the pointer CI moves.
+- **Verify**: build-served responses carry `x-bioc-build: <sha>`; mirror responses
+  don't. Edge-cache safety is by construction — cache entries are keyed by
+  `site/<sha>/…`, and pre-flip mirror entries are never matched on a routed path.
+- **Staging**: `/_latest/` browses the whole `site/latest` build at its final URLs
+  (preview machinery: link rewriting, no-cache, mirror fallthrough) before anything
+  is flipped. No `_routes.json`, or an empty `prefixes`, means the mirror serves
+  everything — the safe default.
+
 ## Cache
 
 The whole site is static and changes only when rclone syncs. So: **cache at the edge
