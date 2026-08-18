@@ -545,6 +545,32 @@ export function previewHref(value: string, prefix: string): string | null {
   return prefix + value;
 }
 
+/**
+ * The client address, keyed-hashed so the raw value never leaves the edge.
+ *
+ * Pseudonymous, not anonymous: the same client maps to the same id, which is
+ * what makes distinct-client counts meaningful and is also the residual risk.
+ * An unsalted SHA-256 of an IPv4 address is trivially reversible -- only four
+ * billion candidates -- so the salt is what does the work here, not the digest.
+ *
+ * `salt` is the 64-character lowercase hex *string* from `bioc-logs-ip-salt`,
+ * used as text and not decoded to its 32 bytes. That choice is load-bearing:
+ * the CloudFront-era backfill hashes with DuckDB's `sha256(salt || c_ip)`, and
+ * the two eras must land in one id space or distinct-client counts silently
+ * split at the cutover. Verified identical across DuckDB, node crypto and
+ * WebCrypto. **The GSM copy carries a trailing newline -- trim it.** A stray
+ * `\n` here reads as a working system and produces two disjoint id spaces.
+ *
+ * Null rather than raw on any missing input: no salt, or no address, means no
+ * id. A null is visible in the data as a gap; a raw address would be a
+ * permanent one-way leak into an archive that cannot be rewritten.
+ */
+export async function hashIp(salt: string | undefined, ip: string | null): Promise<string | null> {
+  if (!salt || !ip) return null;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(salt + ip));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 /** `Content-Range: bytes 0-99/1234` -> the CloudFront sc_range_start/end pair. */
 export function rangeOf(res: Response | null): { start: number; end: number } | null {
   const m = /^bytes (\d+)-(\d+)\//.exec(res?.headers.get("content-range") ?? "");
@@ -563,7 +589,8 @@ export function rangeOf(res: Response | null): { start: number; end: number } | 
  * sc_bytes or time_taken would understate transfer and latency forever, and
  * would look like real data while doing it.
  */
-export function accessRecord(
+export async function accessRecord(
+  salt: string | undefined,
   req: Request,
   status: number,
   cacheStatus: string,
@@ -577,7 +604,11 @@ export function accessRecord(
   const contentRange = rangeOf(res);
   return {
       type: "access",
-      v: 1,
+      // v2 de-identifies at the edge: c_ip became client_id and
+      // x_forwarded_for stopped being collected. Column parity with CloudFront
+      // is deliberately broken in exactly those two places and nowhere else,
+      // which is what the version is for -- ingest branches on it.
+      v: 2,
 
       // date and time are deliberately not split out: they are derivable from
       // ts, and splitting here would be a derived column at ingest (ADR 0002).
@@ -586,7 +617,9 @@ export function accessRecord(
       // Body bytes. CloudFront counts headers too, so this runs slightly low
       // against sc_bytes -- a known, constant-ish offset rather than a gap.
       sc_bytes: bytesOf(res, size),
-      c_ip: req.headers.get("cf-connecting-ip"),
+      // Sits in c_ip's slot so the record stays column-recognisable against
+      // CloudFront; ingest maps it to the same position. See hashIp.
+      client_id: await hashIp(salt, req.headers.get("cf-connecting-ip")),
       cs_method: req.method,
       cs_host: url.host,
       cs_uri_stem: url.pathname,
@@ -606,7 +639,14 @@ export function accessRecord(
       // Request bytes are not exposed to a Worker.
       cs_bytes: null,
       time_taken: t0 === null ? null : now - t0,
-      x_forwarded_for: req.headers.get("x-forwarded-for"),
+      // Deliberately not collected, as of v2. This carries a *chain* of raw
+      // client addresses, so hashing c_ip while still writing this one would
+      // de-identify nothing -- the address would land in the archive anyway,
+      // one field over. Measured at 0.5% populated across the CloudFront era,
+      // so the analytic loss is negligible and the same drop is applied to the
+      // historical backfill. Kept as an explicit null rather than removed, so
+      // the CloudFront column set stays intact.
+      x_forwarded_for: null,
       ssl_protocol: cf?.tlsVersion ?? null,
       ssl_cipher: cf?.tlsCipher ?? null,
       x_edge_response_result_type: cacheStatus,

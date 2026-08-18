@@ -47,6 +47,13 @@ interface Env {
   RELEASE_ROLL?: Workflow<ReleaseRollParams>;
   /** Where the release-roll alert posts. Unset = log only. */
   NOTIFY_URL?: string;
+  /**
+   * Keys the client_id hash. The 64-char hex string from `bioc-logs-ip-salt`,
+   * trimmed -- see hashIp in keys.ts for why the encoding and the newline
+   * matter. Unset means every client_id is null, which loses distinct-client
+   * counts for that window but never writes a raw address.
+   */
+  BIOC_LOGS_IP_SALT?: string;
 }
 
 /**
@@ -183,7 +190,7 @@ export default {
           .on("astro-island[renderer-url]", rewrite("renderer-url"))
           .transform(out);
       }
-      log(env, ctx, req, res.status, "PREVIEW", res, t0);
+      await log(env, ctx, req, res.status, "PREVIEW", res, t0);
       return out;
     }
 
@@ -193,7 +200,7 @@ export default {
     // what produced redirects.json from inventory/htaccess-20260730.conf.
     const target = redirectFor(path, redirects as Redirects);
     if (target) {
-      log(env, ctx, req, 301, "REDIRECT", null, t0);
+      await log(env, ctx, req, 301, "REDIRECT", null, t0);
       return new Response(null, {
         status: 301,
         headers: { location: target, "cache-control": "public, max-age=3600" },
@@ -228,10 +235,10 @@ export default {
         const hit = await cache.match(cacheUrl(url.origin, key));
         if (hit) {
           if (notModified(req, hit)) {
-            log(env, ctx, req, 304, "HIT", null, t0);
+            await log(env, ctx, req, 304, "HIT", null, t0);
             return new Response(null, { status: 304, headers: hit.headers });
           }
-          log(env, ctx, req, hit.status, "HIT", hit, t0);
+          await log(env, ctx, req, hit.status, "HIT", hit, t0);
           return req.method === "HEAD"
             ? new Response(null, { status: hit.status, headers: hit.headers })
             : hit;
@@ -246,7 +253,7 @@ export default {
       else {
         const redir = await packageRedirect(env, path, await symlinks(env));
         if (redir) {
-          log(env, ctx, req, 302, "REDIRECT", null, t0);
+          await log(env, ctx, req, 302, "REDIRECT", null, t0);
           return redir;
         }
       }
@@ -255,7 +262,7 @@ export default {
     if (key && res.status === 200 && req.method === "GET" && !ranged) {
       ctx.waitUntil(cache.put(cacheUrl(url.origin, key), res.clone()));
     }
-    log(env, ctx, req, res.status, ranged ? "RANGE" : "MISS", res, t0, size ?? null);
+    await log(env, ctx, req, res.status, ranged ? "RANGE" : "MISS", res, t0, size ?? null);
     return res;
   },
 };
@@ -423,7 +430,7 @@ async function notFound(env: Env): Promise<Response> {
  * Do not filter or aggregate in this function either -- it writes the record,
  * not a view of it (ADR 0002).
  */
-function log(
+async function log(
   env: Env,
   ctx: ExecutionContext,
   req: Request,
@@ -433,7 +440,11 @@ function log(
   t0: number | null = null,
   size: number | null = null,
 ) {
-  console.log(JSON.stringify(accessRecord(req, status, cacheStatus, res, t0, size)));
+  // Awaited on the response path rather than handed to ctx.waitUntil. A digest
+  // is microseconds, and whether console.log inside waitUntil is captured by
+  // the trace event is exactly the kind of assumption whose failure mode here
+  // is months of silently missing records that cannot be backfilled (ADR 0003).
+  console.log(JSON.stringify(await accessRecord(env.BIOC_LOGS_IP_SALT, req, status, cacheStatus, res, t0, size)));
 
   if (!env.LOGS) return;
   const cf = req.cf as IncomingRequestCfProperties | undefined;

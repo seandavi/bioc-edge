@@ -21,6 +21,7 @@ import {
   stagingPath,
   renderIndex,
   accessRecord,
+  hashIp,
 } from "./src/keys.ts";
 import redirects from "./src/redirects.json" with { type: "json" };
 
@@ -465,10 +466,17 @@ const CLOUDFRONT_FIELDS = [
   "sc_range_start", "sc_range_end",
 ];
 
+// Fixed, and deliberately not the real salt -- these assertions pin the
+// construction, not the production id space.
+const SALT = "deadbeef";
+
 const REQ = () =>
   new Request("https://bioconductor.org/packages/3.23/bioc/src/contrib/limma_3.69.2.tar.gz?x=1", {
     headers: {
       "cf-connecting-ip": "203.0.113.7",
+      // A proxied request: this header carries a chain of raw addresses, and a
+      // fixture without one would let the x_forwarded_for drop pass vacuously.
+      "x-forwarded-for": "198.51.100.23, 203.0.113.7",
       "user-agent": "R (4.6.1 x86_64-pc-linux-gnu)",
       referer: "https://bioconductor.org/packages/limma/",
       cookie: "session=should-not-be-logged",
@@ -477,15 +485,25 @@ const REQ = () =>
     },
   });
 
-test("the record carries every CloudFront column", () => {
-  const rec = accessRecord(REQ(), 200, "MISS", null, null) as Record<string, unknown>;
-  const missing = CLOUDFRONT_FIELDS.filter((f) => !(f in rec));
+// v2 de-identifies at the edge. c_ip is the one CloudFront column the record
+// no longer carries -- it is replaced in the same slot by client_id.
+// x_forwarded_for is still present, as an explicit null.
+const DEIDENTIFIED = ["c_ip"];
+
+test("the record carries every CloudFront column", async () => {
+  const rec = await accessRecord(SALT, REQ(), 200, "MISS", null, null) as Record<string, unknown>;
+  const missing = CLOUDFRONT_FIELDS.filter((f) => !DEIDENTIFIED.includes(f) && !(f in rec));
   assert.deepEqual(missing, [], `dropped CloudFront columns: ${missing.join(", ")}`);
+  assert.ok("client_id" in rec, "client_id must replace c_ip, not just remove it");
+  assert.equal(rec.v, 2, "the version is what ingest branches on; bump it with the shape");
 });
 
-test("the fields statistics depend on are populated, not null", () => {
-  const rec = accessRecord(REQ(), 200, "MISS", null, 1000) as Record<string, unknown>;
-  assert.equal(rec.c_ip, "203.0.113.7");
+test("the fields statistics depend on are populated, not null", async () => {
+  const rec = await accessRecord(SALT, REQ(), 200, "MISS", null, 1000) as Record<string, unknown>;
+  // The literal is what DuckDB's sha256('deadbeef' || '203.0.113.7') returns.
+  // Hardcoded on purpose: this is the only thing standing between the Worker
+  // and the CloudFront backfill drifting into two disjoint client_id spaces.
+  assert.equal(rec.client_id, "9134dc805ff5ba704ac2324afa902b2f4510045b7b25e0cbfa4f1699d031a2f2");
   assert.equal(rec.cs_user_agent, "R (4.6.1 x86_64-pc-linux-gnu)");
   assert.equal(rec.cs_referer, "https://bioconductor.org/packages/limma/");
   assert.equal(rec.cs_uri_stem, "/packages/3.23/bioc/src/contrib/limma_3.69.2.tar.gz");
@@ -495,36 +513,73 @@ test("the fields statistics depend on are populated, not null", () => {
   assert.ok(typeof rec.time_taken === "number");
 });
 
-test("cookies are not collected even when sent", () => {
-  const rec = accessRecord(REQ(), 200, "MISS", null, null) as Record<string, unknown>;
+// The point of v2 is a property of the whole record, not of one field, so
+// assert it that way. `cf` is spliced in verbatim precisely so we never have to
+// guess what Cloudflare adds next -- which means a future Cloudflare field
+// carrying an address would land in the archive silently. This is the test that
+// would catch it.
+test("no raw client address survives anywhere in the record", async () => {
+  const json = JSON.stringify(await accessRecord(SALT, REQ(), 200, "MISS", null, null));
+  assert.ok(!json.includes("203.0.113.7"), "the client address is in the record");
+  assert.ok(!json.includes("198.51.100.23"), "a forwarded-for address is in the record");
+  const ipish = json.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g) ?? [];
+  assert.deepEqual(ipish, [], `IPv4-shaped values in the record: ${ipish.join(", ")}`);
+});
+
+test("x_forwarded_for is not collected, even when the header is present", async () => {
+  const rec = await accessRecord(SALT, REQ(), 200, "MISS", null, null) as Record<string, unknown>;
+  assert.equal(rec.x_forwarded_for, null);
+});
+
+test("the same client hashes to the same id, and different clients do not", async () => {
+  // Stability across calls is what makes distinct-client counts meaningful;
+  // without it every request looks like a new visitor.
+  assert.equal(await hashIp(SALT, "203.0.113.7"), await hashIp(SALT, "203.0.113.7"));
+  assert.notEqual(await hashIp(SALT, "203.0.113.7"), await hashIp(SALT, "203.0.113.8"));
+  // A different salt is a different id space -- which is why the salt must not
+  // be rotated, and why the GSM copy's trailing newline has to be trimmed.
+  assert.notEqual(await hashIp(SALT, "203.0.113.7"), await hashIp(SALT + "\n", "203.0.113.7"));
+});
+
+test("a missing salt yields no id rather than a raw address", async () => {
+  assert.equal(await hashIp(undefined, "203.0.113.7"), null);
+  assert.equal(await hashIp("", "203.0.113.7"), null);
+  assert.equal(await hashIp(SALT, null), null);
+  const rec = await accessRecord(undefined, REQ(), 200, "MISS", null, null) as Record<string, unknown>;
+  assert.equal(rec.client_id, null);
+  assert.ok(!JSON.stringify(rec).includes("203.0.113.7"));
+});
+
+test("cookies are not collected even when sent", async () => {
+  const rec = await accessRecord(SALT, REQ(), 200, "MISS", null, null) as Record<string, unknown>;
   assert.equal(rec.cs_cookie, null);
 });
 
-test("byte counts come from the response, and null means unknown", () => {
+test("byte counts come from the response, and null means unknown", async () => {
   const sized = new Response(null, { headers: { "content-length": "611924" } });
-  assert.equal((accessRecord(REQ(), 200, "MISS", sized, null) as Record<string, unknown>).sc_bytes, 611924);
+  assert.equal((await accessRecord(SALT, REQ(), 200, "MISS", sized, null) as Record<string, unknown>).sc_bytes, 611924);
   // A streamed R2 body carries no Content-Length. Unknown, not zero.
-  assert.equal((accessRecord(REQ(), 200, "MISS", new Response(null), null) as Record<string, unknown>).sc_bytes, null);
+  assert.equal((await accessRecord(SALT, REQ(), 200, "MISS", new Response(null), null) as Record<string, unknown>).sc_bytes, null);
 });
 
-test("range responses record their span", () => {
+test("range responses record their span", async () => {
   const partial = new Response(null, {
     status: 206,
     headers: { "content-range": "bytes 0-65535/611924" },
   });
-  const rec = accessRecord(REQ(), 206, "RANGE", partial, null) as Record<string, unknown>;
+  const rec = await accessRecord(SALT, REQ(), 206, "RANGE", partial, null) as Record<string, unknown>;
   assert.equal(rec.sc_range_start, 0);
   assert.equal(rec.sc_range_end, 65535);
   assert.equal(rec.sc_bytes, 65536);
 });
 
-test("a full GET records the object size, since R2 bodies carry no length", () => {
+test("a full GET records the object size, since R2 bodies carry no length", async () => {
   const streamed = new Response("body", { status: 200 });
-  const rec = accessRecord(REQ(), 200, "MISS", streamed, null, 611924) as Record<string, unknown>;
+  const rec = await accessRecord(SALT, REQ(), 200, "MISS", streamed, null, 611924) as Record<string, unknown>;
   assert.equal(rec.sc_bytes, 611924);
   // HEAD sends no body: charging it the object size would overstate transfer.
   const head = new Response(null, { status: 200 });
-  assert.equal((accessRecord(REQ(), 200, "MISS", head, null, 611924) as Record<string, unknown>).sc_bytes, null);
+  assert.equal((await accessRecord(SALT, REQ(), 200, "MISS", head, null, 611924) as Record<string, unknown>).sc_bytes, null);
 });
 
 test("preview paths map onto the PR's build prefix", () => {
