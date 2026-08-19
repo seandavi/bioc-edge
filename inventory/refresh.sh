@@ -7,12 +7,12 @@
 set -eu
 
 OUT=${OUT:-/data/davsean/bioc-cloudflare/inventory}
-SRC=${SRC:-$RSYNC_SRC}
+SRC=${SRC:-${RSYNC_SRC:?set RSYNC_SRC (see .env) or pass SRC=}}
 mkdir -p "$OUT"
 cd "$OUT"
 TS=$(date -u +%Y%m%dT%H%M%SZ)
 
-# the upstream docroot host is rrsync-restricted (ForceCommand, no shell, no sftp), so
+# The upstream docroot host is rrsync-restricted (ForceCommand, no shell, no sftp), so
 # --list-only is the only way to enumerate it. No -L: release/devel stay
 # symlinks instead of duplicating 3.23/3.24 into the byte count.
 rsync -a --list-only --exclude=lost+found --exclude='.*.??????' \

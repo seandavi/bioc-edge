@@ -68,7 +68,7 @@ zcat osn-archive-latest.tsv.gz | awk -F'\t' \
 
 ## Access notes
 
-- **the upstream docroot host** is locked to `rrsync` via `ForceCommand`. No shell, no sftp (exit 255).
+- **The upstream docroot host** is locked to `rrsync` via `ForceCommand`. No shell, no sftp (exit 255).
   rsync-over-ssh only — which is why rclone cannot talk to it and every sync has to
   stage through a local mirror. See §Incremental sync in `../MIGRATION.md`.
 - **OSN** is anonymous S3 at `https://mghp.osn.xsede.org/`. Bucket-root `lsd` **does**

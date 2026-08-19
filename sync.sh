@@ -3,7 +3,7 @@
 # Push the local mirror to R2, then purge exactly the objects that changed.
 #
 #   ./sync.sh                          crawl mirror -> R2 (phase 1)
-#   RSYNC_SRC=$RSYNC_SRC ./sync.sh
+#   RSYNC_SRC=... ./sync.sh          (value in .env, not in the repo)
 #                                      pull from the upstream docroot host, push only what moved
 #   DRY_RUN=1 ./sync.sh                report what would change, change nothing
 #
@@ -97,7 +97,7 @@ if [[ -z ${DRY_RUN:-} && -z ${RSYNC_SRC:-} ]]; then
 fi
 
 if [[ -n ${RSYNC_SRC:-} ]]; then
-  # rsync is the only way in: the upstream docroot host is rrsync-locked, so nothing else can
+  # rsync is the only way in: the docroot host is rrsync-locked, so nothing else can
   # even enumerate it. Since it has to run anyway, let it compute the delta.
   #
   # %i is an 11-char itemize code, %n the path relative to $DEST -- which is

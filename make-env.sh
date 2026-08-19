@@ -20,6 +20,10 @@ umask 077
   # Workers token deploys the Worker. R2 bucket administration is a separate
   # permission it does not carry -- use rclone (S3 API) for bucket work.
   echo "CLOUDFLARE_API_TOKEN=$(get cdsci-cloudflare-workers-token)"
+  # The rrsync-restricted upstream source. sync.sh treats an unset RSYNC_SRC
+  # as "crawl only" rather than as an error, so a missing value here stops the
+  # pull silently -- which is exactly why it belongs in Secret Manager.
+  echo "RSYNC_SRC=$(get cdsci-bioc-site-rsync-src)"
 } > .env
 
 echo "wrote .env with $(grep -c '=' .env) variables"

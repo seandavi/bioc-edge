@@ -168,7 +168,7 @@ The plan so far accounted for `packages/release` and `packages/devel`. The listi
 - **Dated build aliases**: `checkResults/3.10/bioc-LATEST → bioc-20200415`, and several
   pointing the *other* way (`bioc-20120924 → bioc-LATEST/`).
 - **Absolute targets** that escape the docroot, e.g.
-  `LoriTempToRemove/data/annotation/VIEWS → the live docroot/packages/3.18/data/annotation/VIEWS`.
+  `LoriTempToRemove/data/annotation/VIEWS → <docroot>/packages/3.18/data/annotation/VIEWS`.
   Any resolver has to reject these rather than follow them.
 
 Object storage has no symlinks, so each is either a prefix rewrite in the Worker or a

@@ -1,5 +1,5 @@
 [Unit]
-Description=Sync bioconductor.org docroot from the upstream docroot host to R2
+Description=Sync the bioconductor.org docroot to R2
 Documentation=file:///home/davsean/Documents/git/bioc-site/MIGRATION.md
 # Never let the hourly sync and the weekly checksum pass run at once: they
 # would fight over the same 453 GB of local disk, and the reconcile would be
@@ -16,7 +16,8 @@ OnFailure=bioc-notify@%N.service
 Type=oneshot
 WorkingDirectory=/home/davsean/Documents/git/bioc-site
 EnvironmentFile=/home/davsean/Documents/git/bioc-site/.env
-Environment=RSYNC_SRC=$RSYNC_SRC
+# RSYNC_SRC (the rrsync-restricted upstream source) comes from the
+# EnvironmentFile above, which is gitignored: it is not a tracked value.
 ExecStart=/home/davsean/Documents/git/bioc-site/sync.sh
 # A pull of this size can legitimately take hours on a cold or heavily changed
 # tree. The timer's Persistent=true means a missed run is caught up, so killing

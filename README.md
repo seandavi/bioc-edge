@@ -33,7 +33,7 @@ things follow:
 ```mermaid
 flowchart LR
   subgraph src[Sources]
-    W["<b>the upstream docroot host</b><br/>rrsync over SSH<br/>1,351,530 files<br/>447 GB"]
+    W["<b>upstream docroot</b><br/>rrsync over SSH<br/>1,351,530 files<br/>447 GB"]
     O["<b>OSN</b><br/>anonymous S3<br/>301,217 objects<br/>4.66 TB"]
   end
 
@@ -65,7 +65,7 @@ flowchart LR
   style out fill:transparent,stroke:#c8d1da,stroke-dasharray:4 3
 ```
 
-`the upstream docroot host` is reachable only by `rrsync` — no shell, no sftp — so every sync stages
+The upstream docroot host is reachable only by `rrsync` — no shell, no sftp — so every sync stages
 through a local mirror. That constraint is also why the pull computes the delta itself
 rather than asking R2 what changed, which at 1.35M objects would mean a `HEAD` per object
 on every run.

@@ -31,7 +31,7 @@ and none of them is true yet:
 2. **This host has to be the permanent one.** The units hardcode paths under
    `/data/davsean/`; the mirror is 453 GB and lives on bulk storage that happens to be
    here. If the sync moves to a server, these move with it.
-3. **Unattended SSH has to work.** `the upstream docroot host` is reached over SSH, and a systemd user
+3. **Unattended SSH has to work.** The upstream docroot host is reached over SSH, and a systemd user
    unit has no terminal and no inherited agent. Either the key is passphrase-free and
    readable by the unit, or `SSH_AUTH_SOCK` has to be plumbed in. A timer that silently
    fails every hour on an agent prompt is worse than no timer, because it looks

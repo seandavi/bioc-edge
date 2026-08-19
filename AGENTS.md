@@ -10,38 +10,26 @@ The CloudFront access-log mirror — 7.1B rows, raw gzip plus Parquet plus an Ic
 R2 — and how to query it with Trino, DuckDB, StarRocks or ClickHouse is documented in
 `ANALYTICS.md`. That file is **root-level and deliberately not part of the public site**: it
 carries internal paths, account-specific catalog URIs and secret names. The public account of
-the same work is `docs/download-stats.qmd`.
+the same work is the `download-stats` page in the `bioconductor-infrastructure` repo.
 
 ## Publishing
 
-`docs/*.qmd` is a **public** Quarto site — GitHub Pages, deployed on every push to `main` that
-touches `docs/**`, readable without a GitHub account even though this repo is private. Writing
-there is publishing.
+The Quarto docs site that used to live in `docs/` has been extracted to its own public
+repository, `bioconductor-infrastructure`. Documentation about the estate belongs there,
+not here.
 
-Credentials, the paths of files containing them, internal host addresses, and named attribution
-of people's informal remarks must not reach `docs/`. Put them in session memory or a private
-channel instead. See `docs/adr/0001-public-docs-site-with-a-publication-boundary.md`.
-
-`docs/agents/` and `docs/adr/` are excluded from the site by the `project.render` list in
-`docs/_quarto.yml`. That exclusion is load-bearing — Quarto publishes every input file by
-default.
+What stays here is operational: `MIGRATION.md`, `MIRRORS.md`, `ANALYTICS.md`,
+`DATAPLANE.md`, `inventory/`, `systemd/`. This repo is on its way to being public too, so
+the same rule now applies to every tracked file rather than to `docs/**` alone:
+credentials, the paths and secret names that point at them, internal host addresses, and
+named attribution of people's informal remarks must not be committed. The upstream rsync
+source is `RSYNC_SRC`, read from the gitignored `.env` -- never write the value into a
+tracked file.
 
 ## Version control
 
-This repo is **jj (Jujutsu) colocated with git** — `.jj/` and `.git/` both sit at the root. jj is
-the primary interface. Plain `git` commands still work and jj imports them on its next invocation,
-so a session that reaches for git will not break anything, but prefer jj.
-
-What differs from git, in the order it will bite you:
-
-- There is no staging area, and the working copy is itself a commit (`@`). Edits are snapshotted
-  automatically — nothing to `git add`.
-- Branches are **bookmarks**, and they do not follow new commits. After committing, move one
-  forward explicitly: `jj bookmark set <name> -r @-`.
-- `jj op log` and `jj undo` reverse *any* previous operation, including a bad rebase or an edit a
-  session got wrong. Reach for that before doing reflog archaeology.
-
-`main` is the default branch, and pushing `docs/**` there deploys the public site — see Publishing.
+Plain git. (This repo was briefly jj-colocated; that is gone, along with the
+`refs/jj/*` bookkeeping refs.)
 
 ## Agent skills
 

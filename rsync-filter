@@ -22,7 +22,7 @@
 # --- abandoned staging in the live docroot -----------------------------------
 #
 # 6.1 GB / 2,701 files. The name is upstream's. Contains symlinks pointing at
-# absolute paths under the live docroot/, so it never resolved cleanly anyway.
+# absolute paths under <docroot>/, so it never resolved cleanly anyway.
 - /LoriTempToRemove/***
 
 # --- rsync/filesystem noise --------------------------------------------------
