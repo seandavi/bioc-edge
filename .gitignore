@@ -17,15 +17,15 @@ mirror.urls
 mirror.redirects.tsv
 mirror.targets
 cutover-diff-*/
-docs/_site/
-docs/.quarto/
 .claude/handoffs/
 
-# Upstream site repo, cloned by `just fetch-site`. Regenerate, do not commit.
+# Leftovers from the site build that used to live here; it moved to the
+# bioconductor-website repo. Ignored so a stale local copy cannot be recommitted.
 .cache/
-__pycache__/
-*.pyc
-astro/.astro/
+astro/
+pipeline/
+docs/
+bioc.py
 
 # Local-only exports (issue archives, findings). Never commit.
 *.local.md
