@@ -962,10 +962,6 @@ reports by kind rather than as a single pass/fail number.
    reachable internally.
 6. Rollback = DNS back to CloudFront. Keep TTL low for the first week.
 
-**Open:** whether to block direct `master.bioconductor.org` access afterward. Today it
-[redacted before publication]
-migration unless closed separately.
-
 ## Things this plan does not solve
 
 - Anything genuinely dynamic (search, BiocViews-driven queries, build reports updating
