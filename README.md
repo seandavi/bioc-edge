@@ -173,8 +173,8 @@ which is not on the CI runner.
 
 ## Note
 
-This repository is private while findings about the upstream site are still with the
-Bioconductor team — see the `upstream` label.
+Findings about the upstream site go to the Bioconductor team first, before being
+discussed in this repository — see the `upstream` label.
 
 Credentials never live here; `./make-env.sh` pulls them from Secret Manager into a
 gitignored `.env`.
