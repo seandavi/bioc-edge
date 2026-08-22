@@ -1,0 +1,33 @@
+name: health
+# Daily black-box probe of the serving stack at bioc-dev.cancerdatasci.org.
+# The badge on this workflow is the status light: red means a probe failed.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Homepage responds
+        run: curl -fsS -o /dev/null https://bioc-dev.cancerdatasci.org/
+
+      - name: Release PACKAGES index is served (the BiocManager path)
+        run: |
+          curl -fsS https://bioc-dev.cancerdatasci.org/packages/release/bioc/src/contrib/PACKAGES \
+            | head -c 200 | grep -q '^Package:'
+
+      - name: Symlink resolution works (packages/release is not a real key)
+        run: curl -fsS -o /dev/null https://bioc-dev.cancerdatasci.org/packages/release/bioc/html/BiocGenerics.html
+
+      - name: Range requests return 206
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -r 0-99 \
+            https://bioc-dev.cancerdatasci.org/packages/release/bioc/src/contrib/PACKAGES.gz)
+          test "$code" = 206
+
+      - name: Mirror manifest API is up
+        run: |
+          curl -fsS https://bioc-dev.cancerdatasci.org/api/v1/manifest/index.json \
+            | jq -e '.versions | length > 0' > /dev/null
