@@ -1,0 +1,87 @@
+# Daily URL parity probe: does bioc-dev behave like production? (#1)
+#
+# The cheap early-warning between full cutover-diff.sh crawls: final status
+# code, plus content-type major type on 200s, for a committed list of core
+# paths and a date-seeded sample of package pages pulled from the live
+# release PACKAGES index (so the sample tracks the real package universe
+# without a stale fixture). health.yml asks "is dev up?"; this asks "does
+# dev still agree with prod?". The badge is the alert.
+#
+# TEMPORARY BY DESIGN: delete this workflow at production cutover (M1),
+# when the two hosts become the same thing.
+#
+# Politeness: the prod leg hits the box this project exists to stop paging
+# on. Requests are serialized with a sleep, bodies are discarded, and the
+# UA is attributable -- same stance as cutover-diff.sh.
+name: parity
+
+on:
+  schedule:
+    - cron: "52 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Compare status and content-type across hosts
+        run: |
+          set -u
+          UA='bioc-edge-parity/0.1 (+https://github.com/seandavi/bioc-edge; seandavi@gmail.com)'
+          DEV=https://bioc-dev.cancerdatasci.org
+          PROD=https://bioconductor.org
+
+          paths='/
+          /install/
+          /help/
+          /about/
+          /developers/
+          /packages/release/BiocViews.html
+          /packages/devel/BiocViews.html
+          /packages/release/bioc/html/BiocGenerics.html
+          /packages/devel/bioc/html/BiocGenerics.html
+          /packages/release/data/annotation/
+          /packages/release/workflows/
+          /checkResults
+          /dashboard
+          /about/annual-reports
+          /packages/stats/
+          /help/course-materials/'
+
+          # Date-seeded sample of release software pages from the live index.
+          sampled=$(curl -fsS -A "$UA" "$PROD/packages/release/bioc/src/contrib/PACKAGES" |
+            sed -n 's/^Package: //p' |
+            shuf -n 15 --random-source=<(yes "$(date +%F)") |
+            sed 's|.*|/packages/release/bioc/html/&.html|')
+
+          probe() { # host path ua -> "status ctype-major"
+            curl -s -o /dev/null -L --max-time 30 -A "$3" \
+              -w '%{http_code} %{content_type}' "$1$2" |
+              sed 's/;.*//'
+          }
+
+          # A run where curl can't reach anything reports 000 on both legs and
+          # every pair "matches" -- guard against that false pass up front.
+          for h in "$DEV" "$PROD"; do
+            home=$(probe "$h" / "$UA")
+            [ "${home%% *}" = 200 ] || { echo "sanity: $h/ -> [$home]"; exit 1; }
+          done
+
+          fail=0
+          for p in $paths $sampled; do
+            d=$(probe "$DEV" "$p" "$UA")
+            pr=$(probe "$PROD" "$p" "$UA")
+            if [ "$d" != "$pr" ]; then
+              # Statuses must always agree; content-type only matters on 200s
+              # (error-page ctype is cosmetic).
+              if [ "${d%% *}" != "${pr%% *}" ] || [ "${d%% *}" = "200" ]; then
+                echo "MISMATCH $p dev=[$d] prod=[$pr]"
+                fail=1
+              fi
+            else
+              echo "ok       $p [$d]"
+            fi
+            sleep 0.5
+          done
+          exit $fail

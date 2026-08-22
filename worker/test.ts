@@ -40,7 +40,7 @@ const LINKS = {
   "checkResults/3.10/bioc-LATEST": "bioc-20200415",
   "checkResults/2.10/bioc-20120924": "bioc-LATEST/",
   "LoriTempToRemove/data/annotation/VIEWS":
-    "the live docroot/packages/3.18/data/annotation/VIEWS",
+    "/the/live/docroot/packages/3.18/data/annotation/VIEWS",
 };
 
 test("directory paths get index.html", () => {
