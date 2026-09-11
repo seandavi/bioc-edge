@@ -8,6 +8,8 @@ Two timers, deliberately shipped as a pair.
 | `bioc-reconcile` | weekly | `RECONCILE=1 ./sync.sh` — `rclone check --checksum`, report drift |
 | `bioc-logpush-check` | daily 07:15 | `./check-logpush.sh` — fail if yesterday's UTC Logpush prefix in GCS is empty (ADR 0003: gaps are unrecoverable) |
 
+The two mirror jobs share a lock (`flock` on `$XDG_RUNTIME_DIR/bioc-mirror.lock`): the hourly sync skips its run with exit 0 if the reconcile holds it, and the reconcile waits up to 2 h for a running sync before starting. They used to declare `Conflicts=` on each other, which made systemd *kill* whichever was running when the other started; the multi-hour reconcile never survived the next hourly sync (#5, #6).
+
 Both carry `OnFailure=bioc-notify@%N.service`, so a failed run files (or comments on)
 a GitHub issue titled `<unit> is failing` via `../notify-failure.sh` — full journal for
 that run plus whatever `sync.sh` log files it left on disk, capped only against

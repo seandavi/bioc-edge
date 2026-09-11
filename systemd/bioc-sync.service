@@ -1,10 +1,13 @@
 [Unit]
-Description=Sync bioconductor.org docroot from the upstream docroot host to R2
-Documentation=file:///home/davsean/Documents/git/bioc-site/MIGRATION.md
+Description=Sync the bioconductor.org docroot to R2
+Documentation=file:///home/davsean/Documents/git/bioc-edge/MIGRATION.md
 # Never let the hourly sync and the weekly checksum pass run at once: they
 # would fight over the same 453 GB of local disk, and the reconcile would be
-# comparing a mirror that is being rewritten underneath it.
-Conflicts=bioc-reconcile.service
+# comparing a mirror that is being rewritten underneath it. Mutual exclusion
+# is a flock on %t/bioc-mirror.lock (see ExecStart), NOT Conflicts=: with
+# Conflicts= each unit *killed* the other on start, so the weekly reconcile
+# (multi-hour) was terminated by the next hourly sync every single week, and
+# the sync running at 04:xx on Sunday was killed by the reconcile (issues #5, #6).
 After=network-online.target
 Wants=network-online.target
 # %N is the unit name with the .service suffix stripped -- bioc-notify@ then
@@ -14,10 +17,15 @@ OnFailure=bioc-notify@%N.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/davsean/Documents/git/bioc-site
-EnvironmentFile=/home/davsean/Documents/git/bioc-site/.env
-Environment=RSYNC_SRC=$RSYNC_SRC
-ExecStart=/home/davsean/Documents/git/bioc-site/sync.sh
+WorkingDirectory=/home/davsean/Documents/git/bioc-edge
+EnvironmentFile=/home/davsean/Documents/git/bioc-edge/.env
+# RSYNC_SRC (the rrsync-restricted upstream source) comes from the
+# EnvironmentFile above, which is gitignored: it is not a tracked value.
+# flock -n: if the weekly reconcile holds the mirror lock, skip this hour
+# cleanly (exit 0, one log line); Persistent=true on the timer means the next
+# hour catches up. -E 75 (EX_TEMPFAIL) distinguishes "lock held" from sync.sh's
+# own failures, which keep their exit codes and still trigger OnFailure.
+ExecStart=/bin/sh -c 'flock -n -E 75 "$1" "$2"; rc=$?; if [ "$rc" = 75 ]; then echo "skipped: $1 held (bioc-reconcile running)"; exit 0; fi; exit "$rc"' bioc-sync %t/bioc-mirror.lock /home/davsean/Documents/git/bioc-edge/sync.sh
 # A pull of this size can legitimately take hours on a cold or heavily changed
 # tree. The timer's Persistent=true means a missed run is caught up, so killing
 # a slow one is safe -- but the ceiling has to be above a normal full pull.
