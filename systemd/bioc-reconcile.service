@@ -1,17 +1,20 @@
 [Unit]
 Description=Verify R2 matches the local mirror (checksum drift check)
-Documentation=file:///home/davsean/Documents/git/bioc-site/systemd/README.md
-Conflicts=bioc-sync.service
+Documentation=file:///home/davsean/Documents/git/bioc-edge/systemd/README.md
+# Mutual exclusion with the hourly sync is the flock below, not Conflicts= (see bioc-sync.service).
 After=network-online.target
 Wants=network-online.target
 OnFailure=bioc-notify@%N.service
 
 [Service]
 Type=oneshot
-WorkingDirectory=/home/davsean/Documents/git/bioc-site
-EnvironmentFile=/home/davsean/Documents/git/bioc-site/.env
+WorkingDirectory=/home/davsean/Documents/git/bioc-edge
+EnvironmentFile=/home/davsean/Documents/git/bioc-edge/.env
 Environment=RECONCILE=1
-ExecStart=/home/davsean/Documents/git/bioc-site/sync.sh
+# Wait up to 2 h for a running hourly sync to release the mirror lock, then hold it
+# for the whole checksum pass so no sync starts underneath it. If a sync holds the
+# lock for 2 h something else is wrong: flock exits 1 -> OnFailure -> GitHub issue.
+ExecStart=/usr/bin/flock -w 7200 %t/bioc-mirror.lock /home/davsean/Documents/git/bioc-edge/sync.sh
 # Hashes the whole 453 GB mirror locally. Slow by design.
 TimeoutStartSec=12h
 Nice=15
