@@ -1,11 +1,11 @@
 # Mirroring the Bioconductor package repository
 
-**Status: the endpoint is built and verified; the package repository is still loading.**
-`gen-manifest.sh` publishes the manifest and `finish-load.sh` calls it. The whole operator
-flow below has been walked end to end against `bioc-dev` — fetch, sync, verify — with no
-credentials. What is not ready is the *content*: `packages/3.23` and `3.24` are still being
-loaded into R2, so the manifests those commands fetch do not exist yet. **Do not commit
-anyone to a cutover date from this document.**
+**Status: live and populated.** `gen-manifest.sh` publishes the manifest and
+`finish-load.sh` calls it. As of 2026-09-15 the index on `bioc-dev` covers release (3.23) and
+devel (3.24) across all five repositories, every object with a real MD5, regenerated on each
+sync. The operator flow below — fetch, sync, verify — has been walked end to end with no
+credentials. The operator-facing version of this page lives in bioc-infrastructure as
+`mirror-how-to.qmd`; keep the procedure in sync when either changes.
 
 The thing being replaced:
 
@@ -245,6 +245,7 @@ Flagged rather than invented:
 
 ## What is tested and what is not
 
-The `rclone :http: --files-from` mechanism is **verified working** against
-`bioc-dev.cancerdatasci.org` — tested before this document recommended it. Everything that
-depends on the endpoint is now **tested**, because the endpoint does not exist.
+The `rclone :http: --files-from` mechanism and the endpoint it reads are both **verified
+working** against `bioc-dev.cancerdatasci.org`. What has not been exercised is an operator
+carrying a mirror across a release roll, when `versions.release` and `versions.devel` change
+underneath a scheduled sync — that is the first thing to watch after 3.24 releases.
