@@ -6,11 +6,10 @@ architecture and the migration plan.
 
 ## Access-log analytics
 
-The CloudFront access-log mirror — 7.1B rows, raw gzip plus Parquet plus an Iceberg table in
-R2 — and how to query it with Trino, DuckDB, StarRocks or ClickHouse is documented in
-`ANALYTICS.md`. That file is **root-level and deliberately not part of the public site**: it
-carries internal paths, account-specific catalog URIs and secret names. The public account of
-the same work is `docs/download-stats.qmd`.
+Access-log analytics — the CloudFront mirror, the Logpush delivery, the gap check, and how to
+query any of it — moved to the private `bioc-traffic` repo. This repo is the serving side: the
+Worker builds the per-request access record and Logpush ships it, and that record is the
+contract across the seam. Nothing downstream of the delivery belongs here.
 
 ## Publishing
 
