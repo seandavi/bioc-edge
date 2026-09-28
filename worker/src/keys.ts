@@ -89,7 +89,10 @@ export function candidates(pathname: string, links: Links = {}): string[] {
   else {
     // Has a file extension: serve it directly.
     const last = p.slice(p.lastIndexOf("/") + 1);
-    if (last.includes(".")) out = [p];
+    // Version directories (/books/3.23, /packages/3.24) look dotted but are
+    // directories. ponytail: dotted directory names other than versions still
+    // resolve as files; widen the pattern if one turns up.
+    if (last.includes(".") && !/^\d+(?:\.\d+)+$/.test(last)) out = [p];
     // Extensionless: /help/faq -> help/faq.html, then help/faq/index.html,
     // then the bare key. The bare form is last but necessary: wget saves a
     // redirect's body under the *requested* path, so shortcuts like
@@ -242,6 +245,19 @@ const SHORT_URL = /^packages\/(?:(\d+\.\d+|release|devel)\/)?([A-Za-z][A-Za-z0-9
 export function packageShortUrl(pathname: string): { ver: string; pkg: string } | null {
   const m = SHORT_URL.exec(pathname.replace(/^\/+/, ""));
   return m ? { ver: m[1] ?? "release", pkg: m[2] } : null;
+}
+
+/**
+ * Book short URLs, from books/.htaccess (served from R2 as a plain object,
+ * so none of its rules ran): /books/OMA -> /books/release/OMA/ when the
+ * release build has it, else /books/devel/OMA/. Version and alias directories
+ * are real directories there and never short URLs.
+ */
+const BOOK_SHORT = /^books\/([^/]+)\/?$/;
+
+export function bookShortUrl(pathname: string): string | null {
+  const m = BOOK_SHORT.exec(pathname.replace(/^\/+/, ""));
+  return m && !/^(?:\d+\.\d+|release|devel)$/.test(m[1]) ? m[1] : null;
 }
 
 /**
