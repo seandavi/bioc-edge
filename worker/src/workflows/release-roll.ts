@@ -179,7 +179,11 @@ export interface ReleaseRollParams {
 }
 
 export const DEFAULTS = {
-  originBase: "https://bioconductor.org",
+  // The legacy server itself, not the public name. After the cutover
+  // bioconductor.org is routed to *this* Worker, so reading it would read our
+  // own R2 copy (or fail: Cloudflare refuses same-zone fetches to a routed
+  // Worker) instead of upstream. master stays DNS-only and upstream until M2.
+  originBase: "https://master.bioconductor.org",
   budget: 10_000,
   approvalTimeout: "72 hours" as const,
 };
