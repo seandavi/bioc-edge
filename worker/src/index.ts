@@ -18,6 +18,8 @@ import {
   buildKeys,
   routedKeys,
   cacheKeys,
+  notFoundCacheKey,
+  NOT_FOUND_TTL,
   stagingPath,
   PKG_REPOS,
   renderIndex,
@@ -256,6 +258,15 @@ export default {
         }
       }
     }
+    // After the positive lookup, so a real file cached since always wins.
+    const negUrl = cacheUrl(url.origin, notFoundCacheKey(path, sha));
+    if (!ranged) {
+      const miss = await cache.match(negUrl);
+      if (miss) {
+        log(env, ctx, req, 404, "HIT", miss, t0);
+        return req.method === "HEAD" ? new Response(null, { status: 404, headers: miss.headers }) : miss;
+      }
+    }
 
     let { res, key, size } = await fromR2(req, env, keys);
     if (res.status === 404) {
@@ -273,6 +284,12 @@ export default {
     // Only write what a later lookup can read.
     if (key && lookup.includes(key) && res.status === 200 && req.method === "GET" && !ranged) {
       ctx.waitUntil(cache.put(cacheUrl(url.origin, key), res.clone()));
+    }
+    // A final 404: nothing matched, no listing, no package redirect.
+    if (!key && res.status === 404 && req.method === "GET" && !ranged) {
+      res = new Response(res.body, res);
+      res.headers.set("cache-control", `public, max-age=60, s-maxage=${NOT_FOUND_TTL}`);
+      ctx.waitUntil(cache.put(negUrl, res.clone()));
     }
     log(env, ctx, req, res.status, ranged ? "RANGE" : "MISS", res, t0, size ?? null);
     return res;
@@ -430,10 +447,17 @@ function found(location: string): Response {
   });
 }
 
+// The 404 page body, held per isolate like _routes.json: without this every
+// uncached 404 cost one more R2 read just for its body (issue #38).
+const notFoundPages = new Map<string, (env: Env) => Promise<string | null>>();
+
 async function notFound(env: Env): Promise<Response> {
-  const page = env.NOT_FOUND_KEY && (await env.BUCKET.get(env.NOT_FOUND_KEY));
+  const k = env.NOT_FOUND_KEY;
+  let page = k ? notFoundPages.get(k) : undefined;
+  if (k && !page) notFoundPages.set(k, (page = bucketCache(k, (o) => o.text())));
+  const body = page ? await page(env) : null;
   const headers = new Headers({ "content-type": "text/html; charset=utf-8" });
-  return new Response(page ? page.body : "Not Found", { status: 404, headers });
+  return new Response(body ?? "Not Found", { status: 404, headers });
 }
 
 /**
