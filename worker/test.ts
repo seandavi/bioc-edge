@@ -14,6 +14,7 @@ import {
   listablePrefix,
   packageShortUrl,
   passthrough,
+  needsSlash,
   previewKeys,
   previewHref,
   previewRest,
@@ -707,4 +708,18 @@ test("404 cache key carries the build sha and the path (issue #38)", () => {
   // A new build is a new key, so a page the build adds can't stay a cached 404.
   assert.notEqual(notFoundCacheKey("/x/", "abc123"), notFoundCacheKey("/x/", "def456"));
   assert.equal(notFoundCacheKey("/x/", null), "_404/-/x/");
+});
+
+test("slashless directory requests redirect instead of serving the index in place", () => {
+  // The reported case: relative hrefs on /checkResults resolved to /3.24/...
+  assert.equal(needsSlash("/checkResults", "checkResults/index.html"), true);
+  assert.equal(needsSlash("/help", "site/abc123/help/index.html"), true);
+  // Symlinked directories redirect to the requested name, not the target.
+  assert.equal(needsSlash("/packages/release", "packages/3.21/index.html"), true);
+  // Already the slash form, an explicit index, a page, a file, or no match.
+  assert.equal(needsSlash("/checkResults/", "checkResults/index.html"), false);
+  assert.equal(needsSlash("/help/index.html", "help/index.html"), false);
+  assert.equal(needsSlash("/help/faq", "help/faq.html"), false);
+  assert.equal(needsSlash("/books/OSCA", "books/OSCA"), false);
+  assert.equal(needsSlash("/checkResults", null), false);
 });

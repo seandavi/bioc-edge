@@ -254,6 +254,16 @@ export function packageShortUrl(pathname: string): { ver: string; pkg: string } 
  */
 export const PASSTHROUGH_ORIGIN = "https://master.bioconductor.org";
 
+/**
+ * True when a slashless request was answered by a directory index. Apache
+ * redirects /checkResults to /checkResults/ before serving the index
+ * (DirectorySlash); serving it in place instead makes every relative href
+ * resolve one directory too high.
+ */
+export function needsSlash(path: string, key: string | null): boolean {
+  return !!key && key.endsWith("index.html") && !path.endsWith("/") && !path.endsWith("index.html");
+}
+
 export function passthrough(path: string): boolean {
   return path.startsWith("/packages/stats/");
 }
