@@ -28,20 +28,7 @@ default.
 
 ## Version control
 
-This repo is **jj (Jujutsu) colocated with git** — `.jj/` and `.git/` both sit at the root. jj is
-the primary interface. Plain `git` commands still work and jj imports them on its next invocation,
-so a session that reaches for git will not break anything, but prefer jj.
-
-What differs from git, in the order it will bite you:
-
-- There is no staging area, and the working copy is itself a commit (`@`). Edits are snapshotted
-  automatically — nothing to `git add`.
-- Branches are **bookmarks**, and they do not follow new commits. After committing, move one
-  forward explicitly: `jj bookmark set <name> -r @-`.
-- `jj op log` and `jj undo` reverse *any* previous operation, including a bad rebase or an edit a
-  session got wrong. Reach for that before doing reflog archaeology.
-
-`main` is the default branch, and pushing `docs/**` there deploys the public site — see Publishing.
+Plain git. `main` is the default branch, and pushing `docs/**` there deploys the public site — see Publishing.
 
 ## Agent skills
 
