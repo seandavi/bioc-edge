@@ -283,10 +283,24 @@ async function fromR2(
   keys: string[],
 ): Promise<{ res: Response; key: string | null; size?: number }> {
   for (const key of keys) {
-    const obj = await env.BUCKET.get(key, {
-      onlyIf: req.headers,
-      range: req.headers,
-    });
+    let obj: R2Object | R2ObjectBody | null;
+    try {
+      obj = await env.BUCKET.get(key, { onlyIf: req.headers, range: req.headers });
+    } catch (e) {
+      // R2 throws on a range past the end of the object (10039); uncaught, the
+      // client got a 500. Answer as Apache does (issue #28) -- typically a
+      // client resuming a download it already has in full.
+      if (!String(e).includes("(10039)")) throw e;
+      const head = await env.BUCKET.head(key);
+      if (!head) continue;
+      return {
+        res: new Response(null, {
+          status: 416,
+          headers: { "content-range": `bytes */${head.size}` },
+        }),
+        key: null,
+      };
+    }
     if (!obj) continue;
 
     const headers = new Headers();
