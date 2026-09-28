@@ -40,5 +40,15 @@
 
   // custom_domain lets wrangler create the DNS record itself, rather than
   // needing one to pre-exist as it would for a plain route pattern.
-  "routes": [{ "pattern": "bioc-dev.cancerdatasci.org", "custom_domain": true }]
+  //
+  // next.bioconductor.org is the production-cutover rehearsal host: a plain
+  // route on the bioconductor.org zone, fronted by a *proxied* CNAME to the
+  // apex. It uses the same mechanism the flip will (route + proxy toggle, see
+  // bioc-infrastructure dns-cutover.qmd step 3), so it exercises the real
+  // hostname, zone settings and certificate. `wrangler deploy` replaces this
+  // Worker's routes with this list, so every route must be declared here.
+  "routes": [
+    { "pattern": "bioc-dev.cancerdatasci.org", "custom_domain": true },
+    { "pattern": "next.bioconductor.org/*", "zone_name": "bioconductor.org" }
+  ]
 }
