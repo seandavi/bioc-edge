@@ -23,8 +23,6 @@ set -euo pipefail
 
 BUCKET=${BUCKET:-bioc-site}
 PREFIX=${PREFIX:-api/v1/manifest}
-HOST=${HOST:-bioc-dev.cancerdatasci.org}
-ZONE=${ZONE:-cancerdatasci.org}
 # Repos a mirror would carry. Keys are bucket paths; the manifest filename
 # flattens the slash so data/annotation becomes data-annotation.tsv.gz.
 REPOS=${REPOS:-bioc data/annotation data/experiment workflows books}
@@ -127,18 +125,12 @@ if [[ -z ${DRY_RUN:-} ]]; then
   # 21-hour-old test manifest naming the wrong release, and would have kept
   # doing so for a year. Same failure as the octet-stream that stuck on
   # /packages/plyranges during the POC.
-  urls=("https://$HOST/$PREFIX/index.json")
-  for e in "${emitted[@]}"; do urls+=("https://$HOST/$PREFIX/${e%%:*}.tsv.gz"); done
-  if ! zone_id=$(cf_zone_id "$ZONE"); then
-    echo "WARNING: cannot resolve zone $ZONE -- manifests published but NOT purged." >&2
-    echo "         The edge will serve the previous ones until purged by hand." >&2
-  else
-    # ~11 URLs, so a single request -- but it spends from the same account-wide
-    # budget as the thousands sync.sh purges moments later, which is why this
-    # goes through the shared backoff rather than a bare curl.
-    cf_purge_urls "$zone_id" "${urls[@]}" || exit 1
-    echo "purged ${#urls[@]} manifest urls"
-  fi
+  keys=("$PREFIX/index.json")
+  for e in "${emitted[@]}"; do keys+=("$PREFIX/${e%%:*}.tsv.gz"); done
+  # ~11 keys per host -- but it spends from the same account-wide budget as
+  # the thousands sync.sh purges moments later, hence the shared backoff.
+  cf_purge_keys "${keys[@]}" ||
+    { echo "manifests published but NOT fully purged; the edge serves the old ones until purged by hand" >&2; exit 1; }
 else
   echo "--- DRY_RUN, index.json would be:"; jq '{generated, versions, manifests}' "$idx"
 fi

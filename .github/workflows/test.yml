@@ -44,5 +44,9 @@ jobs:
       - name: rsync itemize parsing and scope filter
         run: ./test-itemize.sh
 
+      # Stubs curl: no network, no token.
+      - name: cache purge (retries, batching, every host and zone)
+        run: ./test-cf-purge.sh
+
       - name: shell syntax
         run: for f in *.sh inventory/*.sh; do bash -n "$f"; done

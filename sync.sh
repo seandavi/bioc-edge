@@ -2,9 +2,9 @@
 #
 # Push the local mirror to R2, then purge exactly the objects that changed.
 #
-#   ./sync.sh                          crawl mirror -> R2 (phase 1)
 #   RSYNC_SRC=$RSYNC_SRC ./sync.sh
 #                                      pull from the upstream docroot host, push only what moved
+#   CRAWL=1 ./sync.sh                  crawl mirror -> R2 (phase 1)
 #   DRY_RUN=1 ./sync.sh                report what would change, change nothing
 #
 # Two ways to learn what changed, because the two sources differ in scale:
@@ -26,8 +26,6 @@ set -euo pipefail
 
 BUCKET=${BUCKET:-bioc-site}
 DEST=${DEST:-mirror}
-HOST=${HOST:-bioc-dev.cancerdatasci.org}
-ZONE=${ZONE:-cancerdatasci.org}
 # What the pull includes, as rsync filter rules. Kept in a file rather than
 # inline because it is the scope decision, not a tuning knob -- see the header
 # of ./rsync-filter for what is dropped and what it costs.
@@ -47,6 +45,7 @@ RSYNC_FILTER=${RSYNC_FILTER:-$(dirname "$0")/rsync-filter}
 # genuinely is simpler, and a change that large should have a human attached
 # anyway -- a release roll drops ~129k objects in one run.
 PURGE_MAX=${PURGE_MAX:-10000}
+# Which hosts get purged: PURGE_TARGETS in cf-purge.sh.
 
 . "$(dirname "$0")/cf-purge.sh"
 
@@ -74,6 +73,13 @@ if [[ -n ${RECONCILE:-} ]]; then
   echo "re-upload with: rclone copy $DEST r2:$BUCKET --files-from <(cat $log.missing $log.differ) --no-traverse"
   exit
 fi
+
+# Crawl mode is `rclone sync` against the bucket root. Pointed at the rsync
+# mirror because RSYNC_SRC went missing from .env, it would delete every prefix
+# the docroot lacks -- archive.bioconductor.org/ (the 4.66 TB OSN copy) and
+# api/ among them (issue #18). So crawl mode has to be asked for by name.
+[[ -n ${RSYNC_SRC:-} || -n ${CRAWL:-} ]] ||
+  { echo "RSYNC_SRC is unset; refusing to run. Set it (see make-env.sh), or CRAWL=1 for crawl mode." >&2; exit 1; }
 
 # rclone derives Content-Type from the file extension, so extensionless keys
 # would upload as application/octet-stream and download rather than render.
@@ -238,15 +244,4 @@ if [[ ${DRY_RUN:-} == 1 ]]; then
 fi
 [[ ${#changed[@]} -gt 0 ]] || exit 0
 
-zone_id=$(cf_zone_id "$ZONE") ||
-  { echo "cannot resolve zone $ZONE; token may lack Zone:Read" >&2; exit 1; }
-
-if ((${#changed[@]} > PURGE_MAX)); then
-  echo "purging entire zone (${#changed[@]} > PURGE_MAX=$PURGE_MAX)"
-  cf_purge_everything "$zone_id"
-else
-  urls=()
-  for k in "${changed[@]}"; do urls+=("https://$HOST/$k"); done
-  cf_purge_urls "$zone_id" "${urls[@]}"
-  echo "purged ${#urls[@]} urls"
-fi
+cf_purge_keys "${changed[@]}"
