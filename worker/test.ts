@@ -405,6 +405,14 @@ test("redirectFor: exact wins over prefix, longest prefix wins over shorter", ()
   assert.equal(redirectFor("/unrelated", rs), null);
 });
 
+test("/talks is not redirected: dropped by policy, now a 404 (issue #32)", () => {
+  const rs = redirects as { exact: Record<string, string>; prefix: { from: string; to: string; keepSuffix: boolean }[] };
+  assert.equal(redirectFor("/talks", rs), null);
+  assert.equal(redirectFor("/talks/", rs), null);
+  // The shape the crawler loop requested.
+  assert.equal(redirectFor("/talks/2016/BioC2016/ConcurrentWorkshops1/Sauteraud/2016/BioC2016/", rs), null);
+});
+
 test("redirectFor against the generated redirects.json: real .htaccess rules", () => {
   const rs = redirects as { exact: Record<string, string>; prefix: { from: string; to: string; keepSuffix: boolean }[] };
   // .htaccess:117 docs/papers.*$ -> fixed target, suffix dropped.
