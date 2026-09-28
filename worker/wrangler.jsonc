@@ -49,6 +49,11 @@
   // Worker's routes with this list, so every route must be declared here.
   "routes": [
     { "pattern": "bioc-dev.cancerdatasci.org", "custom_domain": true },
-    { "pattern": "next.bioconductor.org/*", "zone_name": "bioconductor.org" }
+    { "pattern": "next.bioconductor.org/*", "zone_name": "bioconductor.org" },
+    // Production. Inert while the apex and www records are DNS only (grey
+    // cloud): a route only sees proxied traffic. The flip is switching those
+    // two records to Proxied; the rollback is switching them back.
+    { "pattern": "bioconductor.org/*", "zone_name": "bioconductor.org" },
+    { "pattern": "www.bioconductor.org/*", "zone_name": "bioconductor.org" }
   ]
 }
