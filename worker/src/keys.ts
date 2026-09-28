@@ -578,6 +578,11 @@ export function rangeOf(res: Response | null): { start: number; end: number } | 
  * sc_bytes or time_taken would understate transfer and latency forever, and
  * would look like real data while doing it.
  */
+function logCf(cf: Record<string, unknown>): Record<string, unknown> {
+  const { tlsExportedAuthenticator, tlsClientRandom, tlsClientAuth, ...kept } = cf;
+  return kept;
+}
+
 export function accessRecord(
   req: Request,
   status: number,
@@ -662,6 +667,12 @@ export function accessRecord(
       // Only Cloudflare's own inferences about the connection go in. Request
       // headers do not: those carry user-supplied secrets (cookies,
       // authorization) that have no business in a permanent archive.
-      cf: (cf as unknown as Record<string, unknown>) ?? null,
+      //
+      // Minus three per-connection fields, dropped by name so anything new
+      // still lands. They were ~32% of every record and group nothing: the
+      // exported authenticator and client random are unique per connection,
+      // and tlsClientAuth is empty because the site never asks for a client
+      // certificate (issue #30).
+      cf: cf ? logCf(cf as unknown as Record<string, unknown>) : null,
   };
 }

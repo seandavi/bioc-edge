@@ -514,6 +514,28 @@ test("the fields statistics depend on are populated, not null", () => {
   assert.ok(typeof rec.time_taken === "number");
 });
 
+test("cf is logged whole, minus the per-connection fields", () => {
+  const req = REQ();
+  Object.defineProperty(req, "cf", {
+    value: {
+      asn: 150436,
+      verifiedBotCategory: "",
+      tlsClientCiphersSha1: "TkWWX+BVdX+teLUyccOBfetwATE=",
+      tlsClientRandom: "xEEtMmf5X19b5Hr8QE2BCIeF8LWXliV4JvyvyrcYPak=",
+      tlsExportedAuthenticator: { clientHandshake: "2db9" },
+      tlsClientAuth: { certPresented: "0" },
+      someFutureField: 1,
+    },
+  });
+  const cf = (accessRecord(req, 200, "MISS", null, null) as Record<string, unknown>).cf;
+  assert.deepEqual(cf, {
+    asn: 150436,
+    verifiedBotCategory: "",
+    tlsClientCiphersSha1: "TkWWX+BVdX+teLUyccOBfetwATE=",
+    someFutureField: 1,
+  });
+});
+
 test("cookies are not collected even when sent", () => {
   const rec = accessRecord(REQ(), 200, "MISS", null, null) as Record<string, unknown>;
   assert.equal(rec.cs_cookie, null);
