@@ -3,8 +3,7 @@
 # Cloudflare cache-purge helpers, sourced by sync.sh and gen-manifest.sh:
 #
 #   . "$(dirname "$0")/cf-purge.sh"
-#   zone_id=$(cf_zone_id "$ZONE") || ...     # callers differ on whether fatal
-#   cf_purge_urls "$zone_id" "${urls[@]}"
+#   cf_purge_keys "${keys[@]}"               # every served host, every zone
 #
 # Shared rather than copied because both callers spend the same account-wide
 # rate budget and both need the same backoff -- two copies would have drifted
@@ -28,6 +27,17 @@ CF_PURGE_SLEEP=${CF_PURGE_SLEEP:-0.2}
 CF_PURGE_RETRIES=${CF_PURGE_RETRIES:-4}
 
 CF_API=${CF_API:-https://api.cloudflare.com/client/v4}
+
+# Every hostname the Worker serves, as host:zone. cacheUrl() in
+# worker/src/keys.ts keys the edge cache on the request origin, so each host
+# holds its own copy of every object and each copy needs its own purge.
+# Purging only the dev host would have left bioconductor.org serving frozen
+# PACKAGES and VIEWS for a year after the flip (issue #15). A host whose record
+# is not yet proxied has nothing cached, and purging it is harmless.
+PURGE_TARGETS=${PURGE_TARGETS:-bioc-dev.cancerdatasci.org:cancerdatasci.org next.bioconductor.org:bioconductor.org bioconductor.org:bioconductor.org www.bioconductor.org:bioconductor.org}
+# How many changed keys are still worth purging one URL at a time; past it,
+# each zone is purged whole. See sync.sh for why the ceiling is where it is.
+PURGE_MAX=${PURGE_MAX:-10000}
 
 # Built per call, not once at source time: both callers check the token after
 # sourcing, and baking an empty one in here would send unauthenticated
@@ -86,4 +96,33 @@ cf_purge_urls() {
       "$(jq -nc --args '{files: $ARGS.positional}' "${@:i+1:CF_PURGE_BATCH}")" || return 1
     sleep "$CF_PURGE_SLEEP"
   done
+}
+
+# Purge bucket keys on every host in PURGE_TARGETS, one batch run per zone.
+# Every zone is attempted even after one fails -- a token missing one zone must
+# not leave the others stale too -- and the return is non-zero if any failed.
+cf_purge_keys() {
+  local zone zone_id target k rc=0 urls
+  for zone in $(printf '%s\n' $PURGE_TARGETS | cut -d: -f2 | sort -u); do
+    if ! zone_id=$(cf_zone_id "$zone"); then
+      echo "cannot resolve zone $zone; token may lack Zone:Read on it" >&2
+      rc=1; continue
+    fi
+    if (($# > PURGE_MAX)); then
+      echo "purging entire zone $zone ($# > PURGE_MAX=$PURGE_MAX)"
+      cf_purge_everything "$zone_id" || rc=1
+      continue
+    fi
+    urls=()
+    for target in $PURGE_TARGETS; do
+      [[ ${target#*:} == "$zone" ]] || continue
+      for k in "$@"; do urls+=("https://${target%%:*}/$k"); done
+    done
+    if cf_purge_urls "$zone_id" "${urls[@]}"; then
+      echo "purged ${#urls[@]} urls in $zone"
+    else
+      rc=1
+    fi
+  done
+  return $rc
 }

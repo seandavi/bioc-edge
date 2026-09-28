@@ -81,4 +81,31 @@ queue "$OK" "$BAD" "$OK"
 ! cf_purge_urls zone1 "${urls[@]}" 2>/dev/null || { echo "FAIL kept purging past a hard error"; exit 1; }
 expect_calls "stops on hard error" 2
 
+# 6. Every served host is purged, each in its own zone (issue #15). The edge
+#    caches per hostname, so a key purged only on the dev host stays stale on
+#    bioconductor.org for a year. A zone the token cannot see must not stop
+#    the other zones from being purged -- but the run still has to fail.
+PURGE_TARGETS="dev.example:example.net a.example:example.org b.example:example.org"
+PURGE_MAX=10
+cf_zone_id() { [[ $1 == example.org ]] && echo zid-org || echo zid-net; }
+cf_purge_urls() { echo "$1 ${*:2}" >> "$t/purged"; }
+cf_purge_everything() { echo "$1 EVERYTHING" >> "$t/purged"; }
+: > "$t/purged"
+cf_purge_keys k1 k2 >/dev/null || { echo "FAIL per-zone purge reported failure"; exit 1; }
+[[ $(sort "$t/purged") == "$(printf '%s\n' \
+  "zid-net https://dev.example/k1 https://dev.example/k2" \
+  "zid-org https://a.example/k1 https://a.example/k2 https://b.example/k1 https://b.example/k2")" ]] ||
+  { echo "FAIL wrong hosts or zones purged:"; cat "$t/purged"; exit 1; }
+
+: > "$t/purged"
+cf_purge_keys $(seq 1 11) >/dev/null || { echo "FAIL zone purge reported failure"; exit 1; }
+[[ $(sort "$t/purged") == "$(printf 'zid-net EVERYTHING\nzid-org EVERYTHING')" ]] ||
+  { echo "FAIL PURGE_MAX did not fall back to a purge per zone:"; cat "$t/purged"; exit 1; }
+
+cf_zone_id() { [[ $1 == example.net ]] && echo zid-net; }
+: > "$t/purged"
+! cf_purge_keys k1 >/dev/null 2>&1 || { echo "FAIL unresolvable zone was reported as success"; exit 1; }
+[[ $(cat "$t/purged") == "zid-net https://dev.example/k1" ]] ||
+  { echo "FAIL one bad zone stopped the others"; exit 1; }
+
 echo "ok"
