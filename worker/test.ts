@@ -14,6 +14,7 @@ import {
   listablePrefix,
   packageShortUrl,
   passthrough,
+  bookShortUrl,
   needsSlash,
   previewKeys,
   previewHref,
@@ -722,4 +723,28 @@ test("slashless directory requests redirect instead of serving the index in plac
   assert.equal(needsSlash("/help/faq", "help/faq.html"), false);
   assert.equal(needsSlash("/books/OSCA", "books/OSCA"), false);
   assert.equal(needsSlash("/checkResults", null), false);
+});
+
+test("book short URLs match only a single name under /books/", () => {
+  // Reported: /books/OMA 404'd; books/.htaccess never ran from R2.
+  assert.equal(bookShortUrl("/books/OMA"), "OMA");
+  assert.equal(bookShortUrl("/books/OSCA/"), "OSCA");
+  // Real directories, handled by the slash redirect and the mirror.
+  assert.equal(bookShortUrl("/books/3.23"), null);
+  assert.equal(bookShortUrl("/books/release/"), null);
+  assert.equal(bookShortUrl("/books/devel"), null);
+  // Deeper paths and the root are not short URLs.
+  assert.equal(bookShortUrl("/books/release/OMA/"), null);
+  assert.equal(bookShortUrl("/books/"), null);
+  assert.equal(bookShortUrl("/packages/OMA"), null);
+});
+
+test("version-numbered directories are directories, not dotted files", () => {
+  // Reported alongside the books bug: /books/3.23 404'd instead of redirecting.
+  assert.deepEqual(candidates("/books/3.23"), ["books/3.23.html", "books/3.23/index.html", "books/3.23"]);
+  assert.equal(needsSlash("/books/3.23", "books/3.23/index.html"), true);
+  // Real files keep the single direct candidate.
+  assert.deepEqual(candidates("/packages/release/bioc/src/contrib/limma_3.60.0.tar.gz"), [
+    "packages/release/bioc/src/contrib/limma_3.60.0.tar.gz",
+  ]);
 });

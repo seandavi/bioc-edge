@@ -11,6 +11,7 @@ import {
   listablePrefix,
   packageShortUrl,
   passthrough,
+  bookShortUrl,
   needsSlash,
   PASSTHROUGH_ORIGIN,
   previewHref,
@@ -219,6 +220,14 @@ export default {
         status: 301,
         headers: { location: target, "cache-control": "public, max-age=3600" },
       });
+    }
+
+    // Ahead of the mirror: it holds wget's copies of some of these redirects'
+    // bodies (books/OSCA), which would otherwise be served in place.
+    const book = await bookRedirect(env, path, links);
+    if (book) {
+      log(env, ctx, req, 302, "REDIRECT", null, t0);
+      return book;
     }
 
     // Bindings bypass the edge HTTP cache entirely, so without this every
@@ -450,6 +459,19 @@ async function packageRedirect(env: Env, path: string, links: Links): Promise<Re
     if (await env.BUCKET.head(resolveLinks(target, links))) return found(`/${target}`);
   }
   return found("/about/removed-packages/");
+}
+
+/** books/.htaccess: release first, then devel; no match falls through to a 404. */
+async function bookRedirect(env: Env, path: string, links: Links): Promise<Response | null> {
+  if (path === "/books" || path === "/books/") return found("/books/release/");
+  const book = bookShortUrl(path);
+  if (!book) return null;
+  for (const v of ["release", "devel"]) {
+    if (await env.BUCKET.head(resolveLinks(`books/${v}/${book}/index.html`, links))) {
+      return found(`/books/${v}/${book}/`);
+    }
+  }
+  return null;
 }
 
 /** 302 with master's TTL (Cache-Control: max-age=600, measured). */
