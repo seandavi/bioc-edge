@@ -244,6 +244,20 @@ export function packageShortUrl(pathname: string): { ver: string; pkg: string } 
   return m ? { ver: m[1] ?? "release", pkg: m[2] } : null;
 }
 
+/**
+ * Paths master serves dynamically -- its Apache reverse-proxies them to the
+ * webstats service -- so R2 has nothing to answer with. Passed through to
+ * master until generated stats files replace them in M2 (issue #16; ADR 0004,
+ * bioc-registry#26). Trailing slash required: bare /packages/stats is a
+ * package short URL on master (302 -> /about/removed-packages/), and
+ * packageRedirect already reproduces that.
+ */
+export const PASSTHROUGH_ORIGIN = "https://master.bioconductor.org";
+
+export function passthrough(path: string): boolean {
+  return path.startsWith("/packages/stats/");
+}
+
 /** Shape of worker/src/redirects.json -- see worker/gen-redirects.ts. */
 export interface Redirects {
   exact: Record<string, string>;
