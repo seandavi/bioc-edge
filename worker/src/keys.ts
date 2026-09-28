@@ -531,6 +531,41 @@ export interface Routes {
 }
 
 /**
+ * R2 keys only the mirror can ever hold. Under a routed prefix, a mirror key
+ * is normally kept out of the edge cache: once a later build adds the same
+ * page, a cached mirror copy would shadow it. These can't be shadowed. The
+ * build emits HTML and its own assets, and under packages/ only .html (all
+ * 7,604 files of build 039eb70b). Without this, every tarball, PACKAGES,
+ * VIEWS and config.yaml request went to R2 once / was routed (issue #35).
+ *
+ * Cached under the plain key, which is what sync.sh purges on every change,
+ * so package updates still expire them. Deliberately a short explicit list: a
+ * wrong "no" costs only a miss, a wrong "yes" can serve a stale page.
+ */
+const MIRROR_ROOT_FILES = new Set([
+  "config.yaml",
+  "BiocInstaller.dcf",
+  "bioc-version",
+  "bioc-devel-version",
+  "BioC_mirrors.csv",
+]);
+
+export function mirrorOnly(key: string): boolean {
+  if (MIRROR_ROOT_FILES.has(key)) return true;
+  if (key.startsWith("checkResults/")) return true;
+  return (key.startsWith("packages/") || key.startsWith("books/")) && !key.endsWith(".html");
+}
+
+/**
+ * Keys worth an edge-cache lookup. Unrouted: every mirror candidate. Routed:
+ * the build's keys (sha-scoped, so they invalidate themselves), then only
+ * the mirror candidates that are mirrorOnly.
+ */
+export function cacheKeys(routed: string[] | null, mirror: string[]): string[] {
+  return routed ? [...routed, ...mirror.filter(mirrorOnly)] : mirror;
+}
+
+/**
  * Candidate keys inside `site/<sha>/` when the path is under a flipped
  * prefix, else null. A table prefix owns everything beneath it; `/help/`
  * also claims the slashless `/help`, which the mirror answers with the same
