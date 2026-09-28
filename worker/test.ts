@@ -13,6 +13,7 @@ import {
   redirectFor,
   listablePrefix,
   packageShortUrl,
+  passthrough,
   previewKeys,
   previewHref,
   previewRest,
@@ -330,6 +331,18 @@ test("package short URLs parse: bare, versioned, release/devel, trailing slash",
     ver: "release",
     pkg: "BSgenome.Hsapiens.UCSC.hg38",
   });
+});
+
+test("stats paths pass through to master; bare /packages/stats does not", () => {
+  // Measured on master and production, 2026-09-28 (issue #16).
+  assert.equal(passthrough("/packages/stats/"), true);
+  assert.equal(passthrough("/packages/stats/bioc/limma/"), true);
+  assert.equal(passthrough("/packages/stats/bioc/limma/limma_stats.tab"), true);
+  // Bare /packages/stats is a short URL on master (302 -> removed-packages),
+  // which packageRedirect reproduces; oldstats is static and lives in R2.
+  assert.equal(passthrough("/packages/stats"), false);
+  assert.equal(passthrough("/packages/oldstats/"), false);
+  assert.equal(passthrough("/packages/statsfoo/"), false);
 });
 
 test("package short URLs do not swallow real paths", () => {

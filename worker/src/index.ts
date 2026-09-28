@@ -10,6 +10,8 @@ import {
   accessRecord,
   listablePrefix,
   packageShortUrl,
+  passthrough,
+  PASSTHROUGH_ORIGIN,
   previewHref,
   previewKeys,
   previewRest,
@@ -130,6 +132,21 @@ export default {
     const url = new URL(req.url);
     const path = decodePath(url.pathname);
     if (path === null) return new Response("Bad Request", { status: 400 });
+
+    // Ahead of everything else: the redirect table, the short-URL rule and
+    // the edge cache would all answer these paths wrongly. no-store because
+    // master sends no Cache-Control and the pages are live; manual so the
+    // client sees master's redirects, as it does on production.
+    if (passthrough(path)) {
+      const res = await fetch(PASSTHROUGH_ORIGIN + url.pathname + url.search, {
+        method: req.method,
+        headers: req.headers,
+        redirect: "manual",
+        cache: "no-store",
+      });
+      log(env, ctx, req, res.status, "PASS", res, t0);
+      return res;
+    }
 
     // PR previews bypass the redirect table, the symlink map and the edge
     // cache: the prefix is rewritten on every push to the PR, so a cached
