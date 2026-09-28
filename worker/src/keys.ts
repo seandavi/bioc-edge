@@ -561,6 +561,23 @@ export function mirrorOnly(key: string): boolean {
 }
 
 /**
+ * Edge-cache key for a 404, by request path (issue #38). A 404 walks every
+ * candidate key, maybe a LIST and four HEADs, then fetches the 404 page: several
+ * R2 reads for nothing, and probes and crawlers repeat them per location. The
+ * build sha is in the key, so a build that adds the page expires it.
+ *
+ * ponytail: expiry for mirror additions is the TTL alone (NOT_FOUND_TTL), since
+ * sync.sh purges by object key and this is keyed by path -- a file published
+ * right after someone asked for it 404s for up to that long at that location.
+ * If that ever matters, have sync.sh purge _404/ for keys rclone reports as new.
+ */
+export const NOT_FOUND_TTL = 600;
+
+export function notFoundCacheKey(path: string, sha: string | null): string {
+  return `_404/${sha ?? "-"}${path}`;
+}
+
+/**
  * Keys worth an edge-cache lookup. Unrouted: every mirror candidate. Routed:
  * the build's keys (sha-scoped, so they invalidate themselves), then only
  * the mirror candidates that are mirrorOnly.

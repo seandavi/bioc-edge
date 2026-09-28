@@ -21,6 +21,7 @@ import {
   routedKeys,
   mirrorOnly,
   cacheKeys,
+  notFoundCacheKey,
   stagingPath,
   renderIndex,
   accessRecord,
@@ -699,4 +700,11 @@ test("cache lookup under a routed prefix includes mirror-only keys, not mirror H
   assert.deepEqual(cacheKeys(routedHtml, mirrorHtml), routedHtml);
   // Unrouted: every mirror candidate, as before.
   assert.deepEqual(cacheKeys(null, mirrorHtml), mirrorHtml);
+});
+
+test("404 cache key carries the build sha and the path (issue #38)", () => {
+  assert.equal(notFoundCacheKey("/packages/__api__/status", "abc123"), "_404/abc123/packages/__api__/status");
+  // A new build is a new key, so a page the build adds can't stay a cached 404.
+  assert.notEqual(notFoundCacheKey("/x/", "abc123"), notFoundCacheKey("/x/", "def456"));
+  assert.equal(notFoundCacheKey("/x/", null), "_404/-/x/");
 });
