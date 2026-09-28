@@ -11,6 +11,7 @@ import {
   listablePrefix,
   packageShortUrl,
   passthrough,
+  needsSlash,
   PASSTHROUGH_ORIGIN,
   previewHref,
   previewKeys,
@@ -247,6 +248,7 @@ export default {
       for (const key of lookup) {
         const hit = await cache.match(cacheUrl(url.origin, key));
         if (hit) {
+          if (needsSlash(path, key)) return slashRedirect(env, ctx, req, url, t0);
           if (notModified(req, hit)) {
             log(env, ctx, req, 304, "HIT", null, t0);
             return new Response(null, { status: 304, headers: hit.headers });
@@ -281,6 +283,8 @@ export default {
       }
     }
 
+    if (needsSlash(path, key)) return slashRedirect(env, ctx, req, url, t0);
+
     // Only write what a later lookup can read.
     if (key && lookup.includes(key) && res.status === 200 && req.method === "GET" && !ranged) {
       ctx.waitUntil(cache.put(cacheUrl(url.origin, key), res.clone()));
@@ -295,6 +299,15 @@ export default {
     return res;
   },
 };
+
+// ponytail: 302 like the origin's observed answer, not a 301 -- browsers keep 301s forever.
+function slashRedirect(env: Env, ctx: ExecutionContext, req: Request, url: URL, t0: number): Response {
+  log(env, ctx, req, 302, "REDIRECT", null, t0);
+  return new Response(null, {
+    status: 302,
+    headers: { location: url.pathname + "/" + url.search, "cache-control": "public, max-age=3600" },
+  });
+}
 
 async function fromR2(
   req: Request,
