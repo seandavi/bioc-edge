@@ -74,6 +74,12 @@ const SKIP = new Set([
   // matcher for two rows.
   "RewriteRule ^help/workflows/annotation/(.*)/$ /packages/release/workflows/html/annotation/$1/index.html [R=301]",
   "RewriteRule ^help/workflows/(.*)/$ /packages/release/workflows/html/$1.html [R=301]",
+  // Dropped by policy (bioc-infrastructure ADR 0013): a catch-all to an index
+  // page, i.e. a soft 404. It also fed a crawler loop: course-materials'
+  // relative links, resolved against the /talks/... URL requested, mint new
+  // /talks/... URLs on every hop -- 75% of all traffic just after the
+  // switch, and nobody else requested /talks (issue #32). Now a 404.
+  "RewriteRule ^talks.*$ /help/course-materials/ [R=301]",
   // Version-parameterized target (BioC version reused mid-URL), handled by
   // OVERRIDE below (enumerated per known version) instead of a generic
   // backreference engine for two rows.

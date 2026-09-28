@@ -584,11 +584,6 @@
       "keepSuffix": false
     },
     {
-      "from": "/talks",
-      "to": "/help/course-materials/",
-      "keepSuffix": false
-    },
-    {
       "from": "/News",
       "to": "/help/events/",
       "keepSuffix": false
