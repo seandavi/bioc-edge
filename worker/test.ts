@@ -79,6 +79,12 @@ test("a dot in a parent directory does not count as an extension", () => {
 test("malformed percent-escapes are rejected, valid ones decoded", () => {
   assert.equal(decodePath("/help/%ZZ"), null);
   assert.equal(decodePath("/help/a%20b.html"), "/help/a b.html");
+  // Apache collapses repeated slashes and serves the page (issue #27).
+  assert.equal(
+    decodePath("/packages//release/bioc/vignettes/limma/inst/doc/intro.html"),
+    "/packages/release/bioc/vignettes/limma/inst/doc/intro.html",
+  );
+  assert.equal(decodePath("//packages///2.12/"), "/packages/2.12/");
 });
 
 test("immutable only for version-stamped archives", () => {

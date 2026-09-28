@@ -354,11 +354,12 @@ export function cacheUrl(origin: string, key: string): string {
 /**
  * ponytail: R2 is a flat keyspace, so "a/../b" is a literal key that simply
  * misses rather than escaping anything. Decode only to reject malformed
- * percent-escapes early; no path normalization needed.
+ * percent-escapes early. The one normalization is Apache's: runs of slashes
+ * collapse, so old links like /packages//release/... serve 200 (issue #27).
  */
 export function decodePath(pathname: string): string | null {
   try {
-    return decodeURIComponent(pathname);
+    return decodeURIComponent(pathname).replace(/\/{2,}/g, "/");
   } catch {
     return null;
   }
