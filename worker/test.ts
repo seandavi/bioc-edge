@@ -19,6 +19,8 @@ import {
   previewRest,
   buildKeys,
   routedKeys,
+  mirrorOnly,
+  cacheKeys,
   stagingPath,
   renderIndex,
   accessRecord,
@@ -657,4 +659,41 @@ test("staging: /_latest rides the preview machinery", () => {
     "site/abc123/news.html",
   ]);
   assert.equal(buildKeys("/../secret", "site/abc123/", {}), null);
+});
+
+test("mirror-only keys: package files, checkResults, repo metadata; never HTML (issue #35)", () => {
+  for (const k of [
+    "packages/3.23/bioc/src/contrib/PACKAGES",
+    "packages/3.23/bioc/src/contrib/PACKAGES.gz",
+    "packages/3.23/bioc/VIEWS",
+    "packages/3.23/bioc/src/contrib/limma_3.68.5.tar.gz",
+    "packages/3.23/bioc/bin/windows/contrib/4.6/PACKAGES.rds",
+    "books/3.23/src/contrib/OSCA_1.0.tar.gz",
+    "checkResults/3.23/bioc-LATEST/index.html",
+    "config.yaml",
+    "BiocInstaller.dcf",
+  ]) assert.equal(mirrorOnly(k), true, k);
+  for (const k of [
+    // The build emits package landing pages: a mirror copy must never shadow them.
+    "packages/3.23/bioc/html/limma.html",
+    "packages/3.14/bioc/html/limma.html",
+    "books/3.23/OSCA/index.html",
+    // Build-owned assets and pages.
+    "js/bioconductor.js",
+    "style/main.css",
+    "index.html",
+    "help/index.html",
+    "site/039eb70b/packages/3.23/bioc/html/limma.html",
+  ]) assert.equal(mirrorOnly(k), false, k);
+});
+
+test("cache lookup under a routed prefix includes mirror-only keys, not mirror HTML", () => {
+  const routed = ["site/abc/packages/3.23/bioc/src/contrib/PACKAGES"];
+  const mirror = ["packages/3.23/bioc/src/contrib/PACKAGES"];
+  assert.deepEqual(cacheKeys(routed, mirror), [...routed, ...mirror]);
+  const routedHtml = ["site/abc/packages/3.14/bioc/html/limma.html"];
+  const mirrorHtml = ["packages/3.14/bioc/html/limma.html"];
+  assert.deepEqual(cacheKeys(routedHtml, mirrorHtml), routedHtml);
+  // Unrouted: every mirror candidate, as before.
+  assert.deepEqual(cacheKeys(null, mirrorHtml), mirrorHtml);
 });

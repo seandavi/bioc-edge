@@ -17,6 +17,7 @@ import {
   previewRest,
   buildKeys,
   routedKeys,
+  cacheKeys,
   stagingPath,
   PKG_REPOS,
   renderIndex,
@@ -235,13 +236,13 @@ export default {
 
     // Entries are keyed by resolved object, not request URL, so at most a
     // couple of local lookups -- and /help/, /help and /help/index.html all
-    // land on the same one. On a routed path only the build keys are matched:
-    // a mirror entry cached before the flip must not shadow the page the
-    // build now owns. Fallthrough pages under a flipped prefix therefore skip
-    // the edge cache -- the minority case, and it shrinks as build coverage
-    // grows.
+    // land on the same one. On a routed path the build keys are matched, plus
+    // only the mirror keys no build can own (mirrorOnly): any other mirror
+    // entry cached before a build added that page would shadow it. So HTML the
+    // build lacks still skips the edge cache; package files don't (#35).
+    const lookup = cacheKeys(routed, mirror);
     if (!ranged) {
-      for (const key of routed ?? keys) {
+      for (const key of lookup) {
         const hit = await cache.match(cacheUrl(url.origin, key));
         if (hit) {
           if (notModified(req, hit)) {
@@ -269,7 +270,8 @@ export default {
       }
     }
 
-    if (key && res.status === 200 && req.method === "GET" && !ranged) {
+    // Only write what a later lookup can read.
+    if (key && lookup.includes(key) && res.status === 200 && req.method === "GET" && !ranged) {
       ctx.waitUntil(cache.put(cacheUrl(url.origin, key), res.clone()));
     }
     log(env, ctx, req, res.status, ranged ? "RANGE" : "MISS", res, t0, size ?? null);
