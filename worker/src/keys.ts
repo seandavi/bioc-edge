@@ -551,6 +551,10 @@ const MIRROR_ROOT_FILES = new Set([
 ]);
 
 export function mirrorOnly(key: string): boolean {
+  // Old releases resolve into the one-time OSN archive copy (archiveFallback).
+  // Same rule inside it; nothing ever rewrites or purges it, and it doesn't
+  // need to: it is immutable.
+  if (key.startsWith(`${ARCHIVE_PREFIX}/`)) key = key.slice(ARCHIVE_PREFIX.length + 1);
   if (MIRROR_ROOT_FILES.has(key)) return true;
   if (key.startsWith("checkResults/")) return true;
   return (key.startsWith("packages/") || key.startsWith("books/")) && !key.endsWith(".html");
