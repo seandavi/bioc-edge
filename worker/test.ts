@@ -672,6 +672,8 @@ test("mirror-only keys: package files, checkResults, repo metadata; never HTML (
     "checkResults/3.23/bioc-LATEST/index.html",
     "config.yaml",
     "BiocInstaller.dcf",
+    // Old releases come from the archive copy (archiveFallback).
+    "archive.bioconductor.org/packages/3.22/bioc/src/contrib/PACKAGES.rds",
   ]) assert.equal(mirrorOnly(k), true, k);
   for (const k of [
     // The build emits package landing pages: a mirror copy must never shadow them.
@@ -684,6 +686,7 @@ test("mirror-only keys: package files, checkResults, repo metadata; never HTML (
     "index.html",
     "help/index.html",
     "site/039eb70b/packages/3.23/bioc/html/limma.html",
+    "archive.bioconductor.org/packages/3.18/bioc/html/limma.html",
   ]) assert.equal(mirrorOnly(k), false, k);
 });
 
