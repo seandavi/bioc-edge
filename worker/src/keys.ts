@@ -571,7 +571,7 @@ export function mirrorOnly(key: string): boolean {
  * right after someone asked for it 404s for up to that long at that location.
  * If that ever matters, have sync.sh purge _404/ for keys rclone reports as new.
  */
-export const NOT_FOUND_TTL = 300;
+export const NOT_FOUND_TTL = 600;
 
 export function notFoundCacheKey(path: string, sha: string | null): string {
   return `_404/${sha ?? "-"}${path}`;
