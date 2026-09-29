@@ -31,8 +31,13 @@
 # by status + content-type only, listed explicitly, not silently dropped.
 set -euo pipefail
 
-DEV_HOST=${DEV_HOST:-bioc-dev.cancerdatasci.org}
-PROD_HOST=${PROD_HOST:-bioconductor.org}
+# Since the cutover (2026-09-28) the "dev" side is bioconductor.org itself (the
+# new stack) and the "prod" side is master.bioconductor.org, the legacy origin
+# that stays up until parity is reached. The names are historical; the prod leg
+# is still the one that gets throttled, and master is still the box to be gentle
+# with. For the daily probe of status and redirects, see parity.sh.
+DEV_HOST=${DEV_HOST:-bioconductor.org}
+PROD_HOST=${PROD_HOST:-master.bioconductor.org}
 DEST=${DEST:-mirror}
 URLS=${URLS:-$DEST.urls}
 RATE=${RATE:-2M}          # curl --limit-rate syntax (K/M/G), not wget's

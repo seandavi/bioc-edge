@@ -1,0 +1,12 @@
+# Known differences between bioconductor.org (new) and master.bioconductor.org
+# (legacy), read by parity.sh. One per line: <extended regex on the path><TAB><reason>.
+# Every entry needs a reason: a decision (ADR) or an open issue. When parity.sh
+# reports an entry FIXED, delete it.
+#
+# Open issues (delete when fixed):
+/checkResults/.*/raw-results/?$	bioc-edge#43: raw-results/ directory listings
+/container-binaries/	bioc-edge#44: 301 where master sends 302
+^/packages/$	bioc-edge#45: master redirects /packages/ to BiocViews
+^/packages/[0-9]+\.[0-9]+/[^/]+$	bioc-edge#46: soft-404 to /about/removed-packages/ under a version segment
+#
+# By design:

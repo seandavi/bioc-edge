@@ -48,5 +48,9 @@ jobs:
       - name: cache purge (retries, batching, every host and zone)
         run: ./test-cf-purge.sh
 
+      - name: parity probe comparison and known-difference matching
+        run: ./test-parity.sh
+      - name: cutover-diff classifier
+        run: ./test-cutover-diff.sh
       - name: shell syntax
         run: for f in *.sh inventory/*.sh; do bash -n "$f"; done
