@@ -128,6 +128,12 @@ curl -fsSL "$BASE/api/v1/manifest/$VERSION/bioc.tsv.gz" | gunzip > bioc.tsv
 point at today, the symlink map, per-manifest object counts, and a generation timestamp.
 `bioc.tsv` is `path<TAB>size<TAB>md5`, one object per line.
 
+Rows describe what the site serves, which isn't always the mirror's copy. Where the route
+table sends a path to the Astro build and the build has that file (under `packages/`, every
+`.html` page), the row is the build's object, and `index.json` records the build's sha
+(issue #50). The manifest is regenerated on each hourly sync, so for up to an hour after a
+website deploy those rows can lag the pages being served.
+
 The MD5 is a real MD5, not an S3 composite ETag — rclone stores `md5chksum` metadata on
 multipart uploads, verified by matching a 783 MB object's hash against its OSN source. An
 empty third column means no usable hash was available and the object should be checked by

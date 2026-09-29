@@ -31,6 +31,28 @@ REPOS=${REPOS:-bioc data/annotation data/experiment workflows books}
 # future second bucket for package content does not need a code change.
 ROOT=${ROOT:-packages}
 
+# routed <key prefix> <route prefixes...>: does the route table send this part of
+# the site to the Astro build? Same test as the Worker: the URL starts with a
+# routed prefix.
+routed() { local k=$1 p; shift; for p in "$@"; do [[ /$k/ == "$p"* ]] && return 0; done; return 1; }
+
+# overlay <mirror.tsv> <build.tsv>: manifest rows for what the Worker actually
+# serves. Where the build has a path, the build's object is served, so its row
+# wins; build-only paths are included; mirror rows the build lacks pass through
+# (under packages/ the build emits only .html, so that's every tarball and index).
+overlay() {
+  awk -F'\t' 'FNR == NR { b[$1] = 1; print; next } !($1 in b)' "$2" "$1" | LC_ALL=C sort
+}
+
+# listing <r2 path> <path prefix>: path, size, md5 rows for every object under it.
+listing() {
+  rclone lsf -R --files-only --format "psh" --separator $'\t' --hash md5 "r2:$BUCKET/$1" 2>/dev/null |
+    awk -F'\t' -v pfx="$2" 'BEGIN{OFS="\t"} { h = ($3 ~ /^[0-9a-f]{32}$/) ? $3 : ""; print pfx $1, $2, h }'
+}
+
+# Sourced (by test-gen-manifest.sh): stop here, with the functions defined.
+if [[ ${BASH_SOURCE[0]} != "$0" ]]; then return 0; fi
+
 . "$(dirname "$0")/cf-purge.sh"
 
 : "${CLOUDFLARE_API_TOKEN:?run: ./make-env.sh && set -a && . ./.env && set +a}"
@@ -53,6 +75,16 @@ devel=$(jq -r '."packages/devel" // empty' "$links")
 }
 echo "release=$release devel=$devel"
 
+# Which build the Worker serves, and for which prefixes (_routes.json, ADR 0008).
+# For paths the build has, the manifest must describe the build's object, or an
+# operator's MD5 check fails on every page the build replaced (issue #50).
+routes=$(rclone cat "r2:$BUCKET/_routes.json" 2>/dev/null) || routes='{}'
+build=$(jq -r '.build // empty' <<<"$routes")
+[[ $build == latest ]] && build=$(rclone cat "r2:$BUCKET/site/latest" 2>/dev/null | tr -d '[:space:]')
+mapfile -t route_prefixes < <(jq -r '.prefixes[]?' <<<"$routes")
+[[ -n $build && ${#route_prefixes[@]} -gt 0 ]] || route_prefixes=()
+echo "build=${build:-none} routes=${route_prefixes[*]:-none}"
+
 emitted=()
 for version in "$release" "$devel"; do
   for repo in $REPOS; do
@@ -68,12 +100,14 @@ for version in "$release" "$devel"; do
     # operator would then try to fetch. This is the second time the size -1
     # directory row has bitten in this project -- it also inflated the OSN
     # object count by 38,819 before being caught.
-    if ! rclone lsf -R --files-only --format "psh" --separator $'\t' --hash md5 \
-         "r2:$BUCKET/$ROOT/$version/$repo" 2>/dev/null |
-         awk -F'\t' -v pfx="$ROOT/$version/$repo/" 'BEGIN{OFS="\t"}
-           { h = ($3 ~ /^[0-9a-f]{32}$/) ? $3 : ""; print pfx $1, $2, h }' > "$out"; then
+    if ! listing "$ROOT/$version/$repo" "$ROOT/$version/$repo/" > "$out"; then
       echo "  $version/$repo: not present, skipped"
       continue
+    fi
+    if (( ${#route_prefixes[@]} )) && routed "$ROOT/$version/$repo" "${route_prefixes[@]}"; then
+      listing "site/$build/$ROOT/$version/$repo" "$ROOT/$version/$repo/" > "$out.build" || : > "$out.build"
+      overlay "$out" "$out.build" > "$out.served" && mv "$out.served" "$out"
+      echo "  $version/$flat: $(wc -l < "$out.build") objects from build ${build:0:8}"
     fi
     n=$(wc -l < "$out")
     [[ $n -gt 0 ]] || { echo "  $version/$repo: empty, skipped"; continue; }
@@ -95,13 +129,14 @@ done
 idx=$work/index.json
 jq -n \
   --arg generated "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --arg release "$release" --arg devel "$devel" \
+  --arg release "$release" --arg devel "$devel" --arg build "$build" \
   --slurpfile links "$links" \
   --arg prefix "/$PREFIX" \
   --args '
   {
     generated: $generated,
     versions: { release: $release, devel: $devel },
+    build: $build,
     manifest_prefix: $prefix,
     manifests: [ $ARGS.positional[] | split(":") | { path: (.[0] + ".tsv.gz"), objects: (.[1]|tonumber), without_hash: (.[2]|tonumber) } ],
     symlinks: $links[0],
