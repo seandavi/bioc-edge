@@ -36,7 +36,7 @@
   // cadence is also the retry interval.
   "triggers": { "crons": ["*/15 * * * *"] },
 
-  "vars": { "NOT_FOUND_KEY": "help/404.html" },
+  "vars": { "NOT_FOUND_KEY": "help/404/index.html" },
 
   // custom_domain lets wrangler create the DNS record itself, rather than
   // needing one to pre-exist as it would for a plain route pattern.
