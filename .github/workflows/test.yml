@@ -52,5 +52,7 @@ jobs:
         run: ./test-parity.sh
       - name: cutover-diff classifier
         run: ./test-cutover-diff.sh
+      - name: gen-manifest build overlay
+        run: ./test-gen-manifest.sh
       - name: shell syntax
         run: for f in *.sh inventory/*.sh; do bash -n "$f"; done
