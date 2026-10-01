@@ -17,6 +17,7 @@ import {
   bookShortUrl,
   needsSlash,
   previewKeys,
+  previewElsewhere,
   previewHref,
   previewRest,
   buildKeys,
@@ -747,4 +748,17 @@ test("version-numbered directories are directories, not dotted files", () => {
   assert.deepEqual(candidates("/packages/release/bioc/src/contrib/limma_3.60.0.tar.gz"), [
     "packages/release/bioc/src/contrib/limma_3.60.0.tar.gz",
   ]);
+});
+
+test("previews answer only on the dev host (#48)", () => {
+  const dev = "bioc-dev.cancerdatasci.org";
+  for (const host of ["bioconductor.org", "www.bioconductor.org", "next.bioconductor.org"]) {
+    assert.equal(previewElsewhere("/_pr/31/", host), true);
+    assert.equal(previewElsewhere("/_pr/31", host), true);
+    assert.equal(previewElsewhere("/_latest/news/", host), true);
+    assert.equal(previewElsewhere("/packages/release/bioc/", host), false);
+    assert.equal(previewElsewhere("/_prfoo", host), false);
+  }
+  assert.equal(previewElsewhere("/_pr/31/", dev), false);
+  assert.equal(previewElsewhere("/_latest/", dev), false);
 });

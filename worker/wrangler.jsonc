@@ -50,9 +50,8 @@
   "routes": [
     { "pattern": "bioc-dev.cancerdatasci.org", "custom_domain": true },
     { "pattern": "next.bioconductor.org/*", "zone_name": "bioconductor.org" },
-    // Production. Inert while the apex and www records are DNS only (grey
-    // cloud): a route only sees proxied traffic. The flip is switching those
-    // two records to Proxied; the rollback is switching them back.
+    // Production since the 2026-09-28 cutover, when the apex and www records
+    // were switched to Proxied. Rollback: switch them back to DNS only.
     { "pattern": "bioconductor.org/*", "zone_name": "bioconductor.org" },
     { "pattern": "www.bioconductor.org/*", "zone_name": "bioconductor.org" }
   ]
