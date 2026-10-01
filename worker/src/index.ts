@@ -3,6 +3,7 @@ import {
   cacheControl,
   cacheUrl,
   contentType,
+  previewElsewhere,
   decodePath,
   notModified,
   redirectFor,
@@ -151,6 +152,11 @@ export default {
       });
       log(env, ctx, req, res.status, "PASS", res, t0);
       return res;
+    }
+
+    if (previewElsewhere(path, url.hostname)) {
+      log(env, ctx, req, 404, "MISS", null, t0);
+      return notFound(env);
     }
 
     // PR previews bypass the redirect table, the symlink map and the edge

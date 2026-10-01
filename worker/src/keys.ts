@@ -520,6 +520,17 @@ export function buildKeys(rest: string, base: string, links: Links = {}): string
   return cands.map((c) => base + resolveLinks(c, links));
 }
 
+/** The one host that serves previews (`/_pr/<n>/`, `/_latest/`). */
+export const PREVIEW_HOST = "bioc-dev.cancerdatasci.org";
+
+/**
+ * A preview path on any other host: unreviewed content must not appear under
+ * the production domain (issue #48), so these get the site's 404.
+ */
+export function previewElsewhere(path: string, host: string): boolean {
+  return host !== PREVIEW_HOST && /^\/(?:_pr\/\d{1,6}|_latest)(\/|$)/.test(path);
+}
+
 /** The site-root path inside a preview URL: "/_pr/5/news/" -> "/news/". */
 export function previewRest(path: string): string {
   return /^\/(?:_pr\/\d{1,6}|_latest)(\/.*)?$/.exec(path)?.[1] ?? "/";
