@@ -235,6 +235,20 @@ export const PKG_REPOS = ["bioc", "data/annotation", "data/experiment", "workflo
  *   /packages/rnaseqGene      302 -> .../workflows/html/rnaseqGene.html
  *   /packages/OSCA.intro      302 -> /about/removed-packages/   (books too)
  *
+ * A bare short URL tries release and then devel on master. Production sent
+ * devel-only packages to removed-packages instead (issue
+ * seandavi/bioc-infrastructure#50). Measured 2026-10-05:
+ *
+ *   master /packages/BenchHub 302 -> /packages/devel/bioc/html/BenchHub.html
+ *   prod   /packages/BenchHub 302 -> /about/removed-packages/  (before fix;
+ *                                    also BiocDuckDB, AnVILVRS)
+ *   both   /packages/limma    302 -> /packages/release/bioc/html/limma.html
+ *   both   /packages/NotARealPackage99 302 -> /about/removed-packages/
+ *
+ * An explicit version probes only that version. Master differs there on a
+ * miss (/packages/release/BenchHub is a 404, ours is removed-packages), which
+ * is left as is.
+ *
  * The version segment stays literal in the target (`release`, `devel`, or
  * numeric), exactly as master emits it; the symlink map resolves it on the
  * next request. The package pattern is R's own (letters, digits, dots,
@@ -245,6 +259,29 @@ const SHORT_URL = /^packages\/(?:(\d+\.\d+|release|devel)\/)?([A-Za-z][A-Za-z0-9
 export function packageShortUrl(pathname: string): { ver: string; pkg: string } | null {
   const m = SHORT_URL.exec(pathname.replace(/^\/+/, ""));
   return m ? { ver: m[1] ?? "release", pkg: m[2] } : null;
+}
+
+/**
+ * Where a package short URL redirects, given `exists` (an R2 HEAD in the
+ * Worker). A bare /packages/<pkg> probes release across PKG_REPOS, then devel;
+ * an explicit version probes only itself. No hit is removed-packages. Null
+ * when the path is not a short URL.
+ */
+export async function packageShortUrlTarget(
+  pathname: string,
+  links: Links,
+  exists: (key: string) => Promise<boolean>,
+): Promise<string | null> {
+  const short = packageShortUrl(pathname);
+  if (!short) return null;
+  const bare = !/^\/*packages\/(?:\d+\.\d+|release|devel)\//.test(pathname);
+  for (const ver of bare ? ["release", "devel"] : [short.ver]) {
+    for (const repo of PKG_REPOS) {
+      const target = `packages/${ver}/${repo}/html/${short.pkg}.html`;
+      if (await exists(resolveLinks(target, links))) return `/${target}`;
+    }
+  }
+  return "/about/removed-packages/";
 }
 
 /**
