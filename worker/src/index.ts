@@ -10,7 +10,7 @@ import {
   logQuery,
   accessRecord,
   listablePrefix,
-  packageShortUrl,
+  packageShortUrlTarget,
   passthrough,
   bookShortUrl,
   needsSlash,
@@ -24,7 +24,6 @@ import {
   notFoundCacheKey,
   NOT_FOUND_TTL,
   stagingPath,
-  PKG_REPOS,
   renderIndex,
   resolveLinks,
   LINKS_KEY,
@@ -451,20 +450,15 @@ async function listing(env: Env, keys: string[]): Promise<{ res: Response; key: 
 /**
  * Master's package short URLs, reimplemented (issue #74; see packageShortUrl
  * in keys.ts for the measured behaviour). Runs only after every candidate key
- * has missed, so the up-to-four R2 HEADs fall on requests that were going to
+ * has missed, so the up-to-eight R2 HEADs fall on requests that were going to
  * 404 anyway. 302 not 301, like master: which repo -- and whether the package
  * exists at all -- changes across releases. The probe resolves release/devel
  * through the symlink map, but the Location keeps the literal segment master
  * emits.
  */
 async function packageRedirect(env: Env, path: string, links: Links): Promise<Response | null> {
-  const short = packageShortUrl(path);
-  if (!short) return null;
-  for (const repo of PKG_REPOS) {
-    const target = `packages/${short.ver}/${repo}/html/${short.pkg}.html`;
-    if (await env.BUCKET.head(resolveLinks(target, links))) return found(`/${target}`);
-  }
-  return found("/about/removed-packages/");
+  const to = await packageShortUrlTarget(path, links, async (key) => !!(await env.BUCKET.head(key)));
+  return to ? found(to) : null;
 }
 
 /** books/.htaccess: release first, then devel; no match falls through to a 404. */

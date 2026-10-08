@@ -13,6 +13,7 @@ import {
   redirectFor,
   listablePrefix,
   packageShortUrl,
+  packageShortUrlTarget,
   passthrough,
   bookShortUrl,
   needsSlash,
@@ -343,6 +344,38 @@ test("package short URLs parse: bare, versioned, release/devel, trailing slash",
     ver: "release",
     pkg: "BSgenome.Hsapiens.UCSC.hg38",
   });
+});
+
+test("bare package short URL falls back from release to devel (bioc-infrastructure#50)", async () => {
+  // Fake R2: `has` lists the real keys; the symlink map resolves release/devel.
+  const target = (path: string, ...has: string[]) =>
+    packageShortUrlTarget(path, LINKS, async (key) => has.includes(key));
+  const devel = "packages/3.24/bioc/html/BenchHub.html";
+  const release = "packages/3.23/bioc/html/BenchHub.html";
+  // Devel-only: release misses in every repo, devel hits; literal `devel` kept.
+  assert.equal(await target("/packages/BenchHub", devel), "/packages/devel/bioc/html/BenchHub.html");
+  // Both: release wins.
+  assert.equal(await target("/packages/BenchHub", devel, release), "/packages/release/bioc/html/BenchHub.html");
+  // Devel-only in a non-bioc repo is still found.
+  assert.equal(
+    await target("/packages/affydata", "packages/3.24/data/experiment/html/affydata.html"),
+    "/packages/devel/data/experiment/html/affydata.html",
+  );
+  // Neither.
+  assert.equal(await target("/packages/NotARealPackage99"), "/about/removed-packages/");
+  // Not a short URL.
+  assert.equal(await target("/packages/3.23/bioc/html/BenchHub.html"), null);
+});
+
+test("explicit-version package short URLs probe only that version", async () => {
+  const target = (path: string, ...has: string[]) =>
+    packageShortUrlTarget(path, LINKS, async (key) => has.includes(key));
+  const devel = "packages/3.24/bioc/html/BenchHub.html";
+  const release = "packages/3.23/bioc/html/BenchHub.html";
+  assert.equal(await target("/packages/release/BenchHub", devel), "/about/removed-packages/");
+  assert.equal(await target("/packages/devel/BenchHub", release), "/about/removed-packages/");
+  assert.equal(await target("/packages/devel/BenchHub", devel, release), "/packages/devel/bioc/html/BenchHub.html");
+  assert.equal(await target("/packages/3.23/BenchHub", devel, release), "/packages/3.23/bioc/html/BenchHub.html");
 });
 
 test("stats paths pass through to master; bare /packages/stats does not", () => {
