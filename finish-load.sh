@@ -29,7 +29,9 @@ DEST=${DEST:-/data/davsean/bioc-cloudflare/mirror}
 HOST=${HOST:-bioc-dev.cancerdatasci.org}
 # Everything the docroot does not own. Excluded from the delete scope, not
 # just from upload -- that is the whole point.
-PROTECT=(--exclude 'archive.bioconductor.org/**' --exclude '_symlinks.json' --exclude 'api/**')
+# packages/stats/: bioc-traffic uploads the .tab files there (bioc-infrastructure#114).
+PROTECT=(--exclude 'archive.bioconductor.org/**' --exclude '_symlinks.json' --exclude 'api/**'
+         --exclude 'packages/stats/**')
 # Expected orphans are the phase-1 crawl's ~507 objects, minus those whose keys
 # also exist in the real docroot. Anything far above that means the mirror is
 # incomplete and we are about to delete real content.

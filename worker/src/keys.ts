@@ -321,6 +321,17 @@ export function passthrough(path: string): boolean {
   return path.startsWith("/packages/stats/");
 }
 
+/**
+ * The R2 key for a stats data file, or null. master's .tab files stopped
+ * counting at the cutover -- they read CloudFront logs -- so bioc-traffic
+ * generates them from both eras and uploads them under this prefix
+ * (bioc-infrastructure#114). Only the .tab files: the HTML pages still come
+ * from master via passthrough(), and so does any .tab R2 lacks.
+ */
+export function statsTabKey(path: string): string | null {
+  return path.startsWith("/packages/stats/") && path.endsWith(".tab") ? path.slice(1) : null;
+}
+
 /** Shape of worker/src/redirects.json -- see worker/gen-redirects.ts. */
 export interface Redirects {
   exact: Record<string, string>;
@@ -363,6 +374,7 @@ const TYPES: Record<string, string> = {
   ico: "image/x-icon",
   pdf: "application/pdf",
   txt: "text/plain; charset=utf-8",
+  tab: "text/plain; charset=utf-8",
   xml: "application/xml",
   gz: "application/gzip",
   tgz: "application/gzip",
@@ -461,6 +473,11 @@ const SHORT_LIVED: [(name: string) => boolean, number][] = [
  * the 5 min default (PACKAGES on every build, not just every sync).
  */
 export function cacheControl(key: string): string {
+  // Rewritten daily by bioc-traffic's upload, which purges nothing: freshness
+  // is this TTL, as for listing() pages, never purge-on-sync. The Worker does
+  // not put these in Cloudflare's cache, so browsers get max-age=300 and
+  // s-maxage only bounds other shared caches.
+  if (key.startsWith("packages/stats/")) return "public, max-age=300, s-maxage=3600";
   if (/\.(tar\.gz|tgz|tar\.bz2|zip)$/.test(key)) {
     return "public, max-age=31536000, s-maxage=31536000, immutable";
   }
