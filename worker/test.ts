@@ -14,7 +14,7 @@ import {
   listablePrefix,
   packageShortUrl,
   packageShortUrlTarget,
-  passthrough,
+  isStatsPath,
   statsKey,
   statsNeedsSlash,
   bookShortUrl,
@@ -380,16 +380,16 @@ test("explicit-version package short URLs probe only that version", async () => 
   assert.equal(await target("/packages/3.23/BenchHub", devel, release), "/packages/3.23/bioc/html/BenchHub.html");
 });
 
-test("stats paths pass through to master; bare /packages/stats does not", () => {
+test("stats paths are answered from R2 alone; bare /packages/stats is not one", () => {
   // Measured on master and production, 2026-09-28 (issue #16).
-  assert.equal(passthrough("/packages/stats/"), true);
-  assert.equal(passthrough("/packages/stats/bioc/limma/"), true);
-  assert.equal(passthrough("/packages/stats/bioc/limma/limma_stats.tab"), true);
+  assert.equal(isStatsPath("/packages/stats/"), true);
+  assert.equal(isStatsPath("/packages/stats/bioc/limma/"), true);
+  assert.equal(isStatsPath("/packages/stats/bioc/limma/limma_stats.tab"), true);
   // Bare /packages/stats is a short URL on master (302 -> removed-packages),
   // which packageRedirect reproduces; oldstats is static and lives in R2.
-  assert.equal(passthrough("/packages/stats"), false);
-  assert.equal(passthrough("/packages/oldstats/"), false);
-  assert.equal(passthrough("/packages/statsfoo/"), false);
+  assert.equal(isStatsPath("/packages/stats"), false);
+  assert.equal(isStatsPath("/packages/oldstats/"), false);
+  assert.equal(isStatsPath("/packages/statsfoo/"), false);
 });
 
 test("stats .tab, HTML and static files are R2 keys (bioc-infrastructure#114)", () => {
@@ -426,8 +426,8 @@ test("stats .tab, HTML and static files are R2 keys (bioc-infrastructure#114)", 
     "/packages/oldstats/", "/packages/statsfoo/"]) {
     assert.equal(k(p), null, p);
   }
-  // A miss falls back to master, so the passthrough still covers them.
-  assert.equal(passthrough("/packages/stats/bioc/DeMixT/DeMixT_2019_stats.tab"), true);
+  // A miss is a 404 from the stats guard, not a fall through to the rest of the router.
+  assert.equal(isStatsPath("/packages/stats/bioc/cn.mops_2026_stats.tab"), true);
   assert.equal(contentType("packages/stats/bioc/biodb/index.html"), "text/html; charset=utf-8");
   assert.equal(contentType("packages/stats/static/barchart.js"), "text/javascript; charset=utf-8");
   assert.equal(contentType("packages/stats/bioc/bioc_stats.tab"), "text/plain; charset=utf-8");

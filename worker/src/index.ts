@@ -11,12 +11,11 @@ import {
   accessRecord,
   listablePrefix,
   packageShortUrlTarget,
-  passthrough,
+  isStatsPath,
   statsKey,
   statsNeedsSlash,
   bookShortUrl,
   needsSlash,
-  PASSTHROUGH_ORIGIN,
   previewHref,
   previewKeys,
   previewRest,
@@ -140,8 +139,7 @@ export default {
     const path = decodePath(url.pathname);
     if (path === null) return new Response("Bad Request", { status: 400 });
 
-    // Stats data files and pages from R2, never the edge cache (they are not purged);
-    // a miss falls through to master below.
+    // Stats data files and pages from R2, never the edge cache (they are not purged).
     if (statsNeedsSlash(path)) {
       log(env, ctx, req, 308, "REDIRECT", null, t0);
       return new Response(null, {
@@ -159,18 +157,10 @@ export default {
     }
 
     // Ahead of everything else: the redirect table, the short-URL rule and
-    // the edge cache would all answer these paths wrongly. no-store because
-    // master sends no Cache-Control and the pages are live; manual so the
-    // client sees master's redirects, as it does on production.
-    if (passthrough(path)) {
-      const res = await fetch(PASSTHROUGH_ORIGIN + url.pathname + url.search, {
-        method: req.method,
-        headers: req.headers,
-        redirect: "manual",
-        cache: "no-store",
-      });
-      log(env, ctx, req, res.status, "PASS", res, t0);
-      return res;
+    // the edge cache would all answer these paths wrongly.
+    if (isStatsPath(path)) {
+      log(env, ctx, req, 404, "MISS", null, t0);
+      return notFound(env);
     }
 
     if (previewElsewhere(path, url.hostname)) {
