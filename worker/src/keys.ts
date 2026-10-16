@@ -321,15 +321,46 @@ export function passthrough(path: string): boolean {
   return path.startsWith("/packages/stats/");
 }
 
+/** The stats categories; each has a listing page at /packages/stats/<cat>.html. */
+const STATS_CATS = ["bioc", "data-annotation", "data-experiment", "workflows"];
+
 /**
- * The R2 key for a stats data file, or null. master's .tab files stopped
- * counting at the cutover -- they read CloudFront logs -- so bioc-traffic
- * generates them from both eras and uploads them under this prefix
- * (bioc-infrastructure#114). Only the .tab files: the HTML pages still come
- * from master via passthrough(), and so does any .tab R2 lacks.
+ * True for /packages/stats/<cat> and /packages/stats/<cat>/<pkg> without the
+ * slash. master 308s the first to http://master.bioconductor.org/... (wrong
+ * scheme and host) and serves the second as-is, where the page's relative .tab
+ * links resolve one level up and 404. The Worker 308s both, on the request's host.
  */
-export function statsTabKey(path: string): string | null {
-  return path.startsWith("/packages/stats/") && path.endsWith(".tab") ? path.slice(1) : null;
+export function statsNeedsSlash(path: string): boolean {
+  if (!path.startsWith("/packages/stats/")) return false;
+  const segs = path.slice("/packages/stats/".length).split("/");
+  if (!STATS_CATS.includes(segs[0])) return false;
+  return segs.length === 1 || (segs.length === 2 && !!segs[1] && !/\.(tab|html)$/.test(segs[1]) && segs[1] !== "..");
+}
+
+/**
+ * The R2 key for a stats file, or null: .tab data files and /packages/stats/static/*
+ * as-is, and the HTML pages by directory (bioc-traffic's key contract):
+ *   /packages/stats/            -> packages/stats/index.html
+ *   /packages/stats/<cat>/      -> packages/stats/<cat>/index.html
+ *   /packages/stats/<cat>/<pkg>/ -> packages/stats/<cat>/<pkg>/index.html
+ * An explicit .../index.html maps to the same key (the pages link to
+ * /packages/stats/index.html and bioc/index.html). The category listings are
+ * /packages/stats/<cat>.html as-is, except bioc.html, which on master is the
+ * same page as index.html. Directory paths without the slash are
+ * statsNeedsSlash(). A miss on any key falls back to master via passthrough().
+ */
+export function statsKey(path: string): string | null {
+  if (!path.startsWith("/packages/stats/")) return null;
+  if (path.endsWith(".tab") || path.startsWith("/packages/stats/static/")) return path.slice(1);
+  if (path === "/packages/stats/bioc.html") return "packages/stats/index.html";
+  if (STATS_CATS.some((c) => path === `/packages/stats/${c}.html`)) return path.slice(1);
+  if (path.endsWith("/index.html")) path = path.slice(0, -"index.html".length);
+  const segs = path.slice("/packages/stats/".length).split("/");
+  const slash = segs[segs.length - 1] === "";
+  if (slash) segs.pop();
+  if (segs.length > 2 || segs.some((x) => !x || x === "." || x === "..")) return null;
+  if (!slash) return null;
+  return ["packages/stats", ...segs, "index.html"].join("/");
 }
 
 /** Shape of worker/src/redirects.json -- see worker/gen-redirects.ts. */
