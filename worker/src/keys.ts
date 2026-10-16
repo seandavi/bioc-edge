@@ -325,12 +325,16 @@ export function passthrough(path: string): boolean {
 const STATS_CATS = ["bioc", "data-annotation", "data-experiment", "workflows"];
 
 /**
- * True for /packages/stats/<cat> without the slash. master 308s it to
- * http://master.bioconductor.org/... (wrong scheme and host), so the Worker
- * answers the redirect itself.
+ * True for /packages/stats/<cat> and /packages/stats/<cat>/<pkg> without the
+ * slash. master 308s the first to http://master.bioconductor.org/... (wrong
+ * scheme and host) and serves the second as-is, where the page's relative .tab
+ * links resolve one level up and 404. The Worker 308s both, on the request's host.
  */
 export function statsNeedsSlash(path: string): boolean {
-  return STATS_CATS.some((c) => path === `/packages/stats/${c}`);
+  if (!path.startsWith("/packages/stats/")) return false;
+  const segs = path.slice("/packages/stats/".length).split("/");
+  if (!STATS_CATS.includes(segs[0])) return false;
+  return segs.length === 1 || (segs.length === 2 && !!segs[1] && !/\.(tab|html)$/.test(segs[1]) && segs[1] !== "..");
 }
 
 /**
@@ -342,10 +346,8 @@ export function statsNeedsSlash(path: string): boolean {
  * An explicit .../index.html maps to the same key (the pages link to
  * /packages/stats/index.html and bioc/index.html). The category listings are
  * /packages/stats/<cat>.html as-is, except bioc.html, which on master is the
- * same page as index.html. master also answers /packages/stats/<cat>/<pkg>
- * (no slash) with the same 200 page, no redirect, so that maps to the same key;
- * /packages/stats/<cat> without a slash is statsNeedsSlash(). A miss on any
- * key falls back to master via passthrough().
+ * same page as index.html. Directory paths without the slash are
+ * statsNeedsSlash(). A miss on any key falls back to master via passthrough().
  */
 export function statsKey(path: string): string | null {
   if (!path.startsWith("/packages/stats/")) return null;
@@ -357,7 +359,7 @@ export function statsKey(path: string): string | null {
   const slash = segs[segs.length - 1] === "";
   if (slash) segs.pop();
   if (segs.length > 2 || segs.some((x) => !x || x === "." || x === "..")) return null;
-  if (!slash && segs.length !== 2) return null;
+  if (!slash) return null;
   return ["packages/stats", ...segs, "index.html"].join("/");
 }
 

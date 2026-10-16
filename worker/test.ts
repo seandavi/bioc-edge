@@ -400,8 +400,7 @@ test("stats .tab, HTML and static files are R2 keys (bioc-infrastructure#114)", 
   assert.equal(k("/packages/stats/"), "packages/stats/index.html");
   assert.equal(k("/packages/stats/bioc/"), "packages/stats/bioc/index.html");
   assert.equal(k("/packages/stats/bioc/biodb/"), "packages/stats/bioc/biodb/index.html");
-  // master: <cat>/<pkg> without slash is the same 200 page; <cat> alone is a 308.
-  assert.equal(k("/packages/stats/bioc/biodb"), "packages/stats/bioc/biodb/index.html");
+  assert.equal(k("/packages/stats/bioc/biodb"), null);   // statsNeedsSlash
   // Explicit index.html (the pages link to these) and the category listings.
   assert.equal(k("/packages/stats/index.html"), "packages/stats/index.html");
   assert.equal(k("/packages/stats/bioc/index.html"), "packages/stats/bioc/index.html");
@@ -413,7 +412,13 @@ test("stats .tab, HTML and static files are R2 keys (bioc-infrastructure#114)", 
   for (const c of ["bioc", "data-annotation", "data-experiment", "workflows"]) {
     assert.equal(statsNeedsSlash(`/packages/stats/${c}`), true, c);
   }
-  for (const p of ["/packages/stats", "/packages/stats/", "/packages/stats/bioc/", "/packages/stats/foo", "/packages/stats/bioc/biodb"]) {
+  // <cat>/<pkg> too: the page's relative .tab links need the slash. Dotted names are packages.
+  for (const p of ["/packages/stats/bioc/biodb", "/packages/stats/data-annotation/org.Hs.eg.db"]) {
+    assert.equal(statsNeedsSlash(p), true, p);
+  }
+  for (const p of ["/packages/stats", "/packages/stats/", "/packages/stats/bioc/", "/packages/stats/foo",
+    "/packages/stats/bioc/biodb/", "/packages/stats/bioc/index.html", "/packages/stats/bioc/bioc_stats.tab",
+    "/packages/stats/foo/bar", "/packages/stats/bioc/a/b", "/packages/stats/bioc/..", "/packages/statsx/bioc"]) {
     assert.equal(statsNeedsSlash(p), false, p);
   }
   for (const p of ["/packages/stats", "/packages/stats/bioc", "/packages/stats/foo.html",
