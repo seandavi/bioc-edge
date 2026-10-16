@@ -15,6 +15,7 @@ import {
   packageShortUrl,
   packageShortUrlTarget,
   passthrough,
+  statsTabKey,
   bookShortUrl,
   needsSlash,
   previewKeys,
@@ -388,6 +389,24 @@ test("stats paths pass through to master; bare /packages/stats does not", () => 
   assert.equal(passthrough("/packages/stats"), false);
   assert.equal(passthrough("/packages/oldstats/"), false);
   assert.equal(passthrough("/packages/statsfoo/"), false);
+});
+
+test("stats .tab files are R2 keys; stats HTML is not (bioc-infrastructure#114)", () => {
+  assert.equal(statsTabKey("/packages/stats/bioc/DeMixT/DeMixT_2026_stats.tab"),
+    "packages/stats/bioc/DeMixT/DeMixT_2026_stats.tab");
+  assert.equal(statsTabKey("/packages/stats/bioc/bioc_pkg_scores.tab"), "packages/stats/bioc/bioc_pkg_scores.tab");
+  assert.equal(statsTabKey("/packages/stats/data-annotation/annotation_stats.tab"),
+    "packages/stats/data-annotation/annotation_stats.tab");
+  // HTML pages and the static assets stay on master.
+  for (const p of ["/packages/stats/", "/packages/stats/bioc/DeMixT/", "/packages/stats/index.html",
+    "/packages/stats/static/barchart.js", "/packages/oldstats/bioc/x_stats.tab", "/packages/stats"]) {
+    assert.equal(statsTabKey(p), null, p);
+  }
+  // A miss falls back to master, so the passthrough still covers them.
+  assert.equal(passthrough("/packages/stats/bioc/DeMixT/DeMixT_2019_stats.tab"), true);
+  assert.equal(contentType("packages/stats/bioc/bioc_stats.tab"), "text/plain; charset=utf-8");
+  // Not purged on upload: a short edge TTL, not the purge-backed year.
+  assert.equal(cacheControl("packages/stats/bioc/bioc_stats.tab"), "public, max-age=300, s-maxage=3600");
 });
 
 test("package short URLs do not swallow real paths", () => {

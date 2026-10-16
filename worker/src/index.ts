@@ -12,6 +12,7 @@ import {
   listablePrefix,
   packageShortUrlTarget,
   passthrough,
+  statsTabKey,
   bookShortUrl,
   needsSlash,
   PASSTHROUGH_ORIGIN,
@@ -142,6 +143,16 @@ export default {
     // the edge cache would all answer these paths wrongly. no-store because
     // master sends no Cache-Control and the pages are live; manual so the
     // client sees master's redirects, as it does on production.
+    // Stats data files from R2, never the edge cache (they are not purged);
+    // a miss falls through to master below.
+    const tab = statsTabKey(path);
+    if (tab) {
+      const { res, size } = await fromR2(req, env, [tab]);
+      if (res.status !== 404) {
+        log(env, ctx, req, res.status, "MISS", res, t0, size ?? null);
+        return res;
+      }
+    }
     if (passthrough(path)) {
       const res = await fetch(PASSTHROUGH_ORIGIN + url.pathname + url.search, {
         method: req.method,
