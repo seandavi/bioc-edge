@@ -13,6 +13,7 @@ import {
   packageShortUrlTarget,
   passthrough,
   statsKey,
+  statsNeedsSlash,
   bookShortUrl,
   needsSlash,
   PASSTHROUGH_ORIGIN,
@@ -141,6 +142,13 @@ export default {
 
     // Stats data files and pages from R2, never the edge cache (they are not purged);
     // a miss falls through to master below.
+    if (statsNeedsSlash(path)) {
+      log(env, ctx, req, 308, "REDIRECT", null, t0);
+      return new Response(null, {
+        status: 308,
+        headers: { location: url.origin + path + "/" + url.search, "cache-control": "public, max-age=3600" },
+      });
+    }
     const sk = statsKey(path);
     if (sk) {
       const { res, size } = await fromR2(req, env, [sk]);

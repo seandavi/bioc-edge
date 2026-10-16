@@ -321,20 +321,38 @@ export function passthrough(path: string): boolean {
   return path.startsWith("/packages/stats/");
 }
 
+/** The stats categories; each has a listing page at /packages/stats/<cat>.html. */
+const STATS_CATS = ["bioc", "data-annotation", "data-experiment", "workflows"];
+
+/**
+ * True for /packages/stats/<cat> without the slash. master 308s it to
+ * http://master.bioconductor.org/... (wrong scheme and host), so the Worker
+ * answers the redirect itself.
+ */
+export function statsNeedsSlash(path: string): boolean {
+  return STATS_CATS.some((c) => path === `/packages/stats/${c}`);
+}
+
 /**
  * The R2 key for a stats file, or null: .tab data files and /packages/stats/static/*
  * as-is, and the HTML pages by directory (bioc-traffic's key contract):
  *   /packages/stats/            -> packages/stats/index.html
  *   /packages/stats/<cat>/      -> packages/stats/<cat>/index.html
  *   /packages/stats/<cat>/<pkg>/ -> packages/stats/<cat>/<pkg>/index.html
- * master also answers /packages/stats/<cat>/<pkg> (no slash) with the same 200
- * page, no redirect, so that maps to the same key. /packages/stats/<cat> without
- * a slash is a 308 on master and is left unmapped, so it falls through to
- * master. A miss on any key falls back to master via passthrough().
+ * An explicit .../index.html maps to the same key (the pages link to
+ * /packages/stats/index.html and bioc/index.html). The category listings are
+ * /packages/stats/<cat>.html as-is, except bioc.html, which on master is the
+ * same page as index.html. master also answers /packages/stats/<cat>/<pkg>
+ * (no slash) with the same 200 page, no redirect, so that maps to the same key;
+ * /packages/stats/<cat> without a slash is statsNeedsSlash(). A miss on any
+ * key falls back to master via passthrough().
  */
 export function statsKey(path: string): string | null {
   if (!path.startsWith("/packages/stats/")) return null;
   if (path.endsWith(".tab") || path.startsWith("/packages/stats/static/")) return path.slice(1);
+  if (path === "/packages/stats/bioc.html") return "packages/stats/index.html";
+  if (STATS_CATS.some((c) => path === `/packages/stats/${c}.html`)) return path.slice(1);
+  if (path.endsWith("/index.html")) path = path.slice(0, -"index.html".length);
   const segs = path.slice("/packages/stats/".length).split("/");
   const slash = segs[segs.length - 1] === "";
   if (slash) segs.pop();

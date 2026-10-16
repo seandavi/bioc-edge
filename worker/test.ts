@@ -16,6 +16,7 @@ import {
   packageShortUrlTarget,
   passthrough,
   statsKey,
+  statsNeedsSlash,
   bookShortUrl,
   needsSlash,
   previewKeys,
@@ -401,7 +402,21 @@ test("stats .tab, HTML and static files are R2 keys (bioc-infrastructure#114)", 
   assert.equal(k("/packages/stats/bioc/biodb/"), "packages/stats/bioc/biodb/index.html");
   // master: <cat>/<pkg> without slash is the same 200 page; <cat> alone is a 308.
   assert.equal(k("/packages/stats/bioc/biodb"), "packages/stats/bioc/biodb/index.html");
-  for (const p of ["/packages/stats", "/packages/stats/bioc", "/packages/stats/index.html",
+  // Explicit index.html (the pages link to these) and the category listings.
+  assert.equal(k("/packages/stats/index.html"), "packages/stats/index.html");
+  assert.equal(k("/packages/stats/bioc/index.html"), "packages/stats/bioc/index.html");
+  assert.equal(k("/packages/stats/bioc/biodb/index.html"), "packages/stats/bioc/biodb/index.html");
+  assert.equal(k("/packages/stats/bioc.html"), "packages/stats/index.html");
+  for (const c of ["data-annotation", "data-experiment", "workflows"]) {
+    assert.equal(k(`/packages/stats/${c}.html`), `packages/stats/${c}.html`);
+  }
+  for (const c of ["bioc", "data-annotation", "data-experiment", "workflows"]) {
+    assert.equal(statsNeedsSlash(`/packages/stats/${c}`), true, c);
+  }
+  for (const p of ["/packages/stats", "/packages/stats/", "/packages/stats/bioc/", "/packages/stats/foo", "/packages/stats/bioc/biodb"]) {
+    assert.equal(statsNeedsSlash(p), false, p);
+  }
+  for (const p of ["/packages/stats", "/packages/stats/bioc", "/packages/stats/foo.html",
     "/packages/stats/a/b/c/", "/packages/stats/bioc/../", "/packages/stats//", "/packages/oldstats/bioc/x_stats.tab",
     "/packages/oldstats/", "/packages/statsfoo/"]) {
     assert.equal(k(p), null, p);
