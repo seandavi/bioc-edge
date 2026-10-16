@@ -7,7 +7,8 @@
 #   ./notify-failure.sh bioc-sync.service
 #
 # One issue per unit, reused across repeat failures (comment, not a new
-# issue each time) so a flaky patch doesn't flood the tracker. Body is not
+# issue each time, and at most one comment per NOTIFY_QUIET_HOURS, default 6)
+# so a flaky patch doesn't flood the tracker. Body is not
 # trimmed for brevity -- this box has one operator and the log is the
 # point -- only capped against GitHub's ~65KB body limit.
 set -euo pipefail
@@ -51,7 +52,17 @@ body=${body:0:60000}
 existing=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
   --jq "[.[] | select(.title == \"$title\")][0].number" 2>/dev/null || true)
 
+# A unit on a short timer (bioc-site-refresh runs every 20 min) can fail ~70
+# times a day. Comment at most once per NOTIFY_QUIET_HOURS on the open issue;
+# the journal keeps every run in between.
+quiet_h=${NOTIFY_QUIET_HOURS:-6}
 if [[ -n $existing ]]; then
+  last=$(gh issue view "$existing" --json createdAt,comments \
+    --jq '([.createdAt] + [.comments[].createdAt]) | max' 2>/dev/null || true)
+  if [[ -n $last ]] && (( $(date -u +%s) - $(date -u -d "$last" +%s) < quiet_h * 3600 )); then
+    echo "notify-failure: #$existing updated at $last, within ${quiet_h}h; not commenting" >&2
+    exit 0
+  fi
   gh issue comment "$existing" --body "$body"
 else
   gh issue create --title "$title" --body "$body" --label bug
