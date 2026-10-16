@@ -322,14 +322,25 @@ export function passthrough(path: string): boolean {
 }
 
 /**
- * The R2 key for a stats data file, or null. master's .tab files stopped
- * counting at the cutover -- they read CloudFront logs -- so bioc-traffic
- * generates them from both eras and uploads them under this prefix
- * (bioc-infrastructure#114). Only the .tab files: the HTML pages still come
- * from master via passthrough(), and so does any .tab R2 lacks.
+ * The R2 key for a stats file, or null: .tab data files and /packages/stats/static/*
+ * as-is, and the HTML pages by directory (bioc-traffic's key contract):
+ *   /packages/stats/            -> packages/stats/index.html
+ *   /packages/stats/<cat>/      -> packages/stats/<cat>/index.html
+ *   /packages/stats/<cat>/<pkg>/ -> packages/stats/<cat>/<pkg>/index.html
+ * master also answers /packages/stats/<cat>/<pkg> (no slash) with the same 200
+ * page, no redirect, so that maps to the same key. /packages/stats/<cat> without
+ * a slash is a 308 on master and is left unmapped, so it falls through to
+ * master. A miss on any key falls back to master via passthrough().
  */
-export function statsTabKey(path: string): string | null {
-  return path.startsWith("/packages/stats/") && path.endsWith(".tab") ? path.slice(1) : null;
+export function statsKey(path: string): string | null {
+  if (!path.startsWith("/packages/stats/")) return null;
+  if (path.endsWith(".tab") || path.startsWith("/packages/stats/static/")) return path.slice(1);
+  const segs = path.slice("/packages/stats/".length).split("/");
+  const slash = segs[segs.length - 1] === "";
+  if (slash) segs.pop();
+  if (segs.length > 2 || segs.some((x) => !x || x === "." || x === "..")) return null;
+  if (!slash && segs.length !== 2) return null;
+  return ["packages/stats", ...segs, "index.html"].join("/");
 }
 
 /** Shape of worker/src/redirects.json -- see worker/gen-redirects.ts. */

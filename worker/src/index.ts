@@ -12,7 +12,7 @@ import {
   listablePrefix,
   packageShortUrlTarget,
   passthrough,
-  statsTabKey,
+  statsKey,
   bookShortUrl,
   needsSlash,
   PASSTHROUGH_ORIGIN,
@@ -139,11 +139,11 @@ export default {
     const path = decodePath(url.pathname);
     if (path === null) return new Response("Bad Request", { status: 400 });
 
-    // Stats data files from R2, never the edge cache (they are not purged);
+    // Stats data files and pages from R2, never the edge cache (they are not purged);
     // a miss falls through to master below.
-    const tab = statsTabKey(path);
-    if (tab) {
-      const { res, size } = await fromR2(req, env, [tab]);
+    const sk = statsKey(path);
+    if (sk) {
+      const { res, size } = await fromR2(req, env, [sk]);
       if (res.status !== 404) {
         log(env, ctx, req, res.status, "MISS", res, t0, size ?? null);
         return res;
