@@ -139,10 +139,6 @@ export default {
     const path = decodePath(url.pathname);
     if (path === null) return new Response("Bad Request", { status: 400 });
 
-    // Ahead of everything else: the redirect table, the short-URL rule and
-    // the edge cache would all answer these paths wrongly. no-store because
-    // master sends no Cache-Control and the pages are live; manual so the
-    // client sees master's redirects, as it does on production.
     // Stats data files from R2, never the edge cache (they are not purged);
     // a miss falls through to master below.
     const tab = statsTabKey(path);
@@ -153,6 +149,11 @@ export default {
         return res;
       }
     }
+
+    // Ahead of everything else: the redirect table, the short-URL rule and
+    // the edge cache would all answer these paths wrongly. no-store because
+    // master sends no Cache-Control and the pages are live; manual so the
+    // client sees master's redirects, as it does on production.
     if (passthrough(path)) {
       const res = await fetch(PASSTHROUGH_ORIGIN + url.pathname + url.search, {
         method: req.method,

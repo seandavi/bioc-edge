@@ -474,7 +474,9 @@ const SHORT_LIVED: [(name: string) => boolean, number][] = [
  */
 export function cacheControl(key: string): string {
   // Rewritten daily by bioc-traffic's upload, which purges nothing: freshness
-  // is this TTL, as for listing() pages, never purge-on-sync.
+  // is this TTL, as for listing() pages, never purge-on-sync. The Worker does
+  // not put these in Cloudflare's cache, so browsers get max-age=300 and
+  // s-maxage only bounds other shared caches.
   if (key.startsWith("packages/stats/")) return "public, max-age=300, s-maxage=3600";
   if (/\.(tar\.gz|tgz|tar\.bz2|zip)$/.test(key)) {
     return "public, max-age=31536000, s-maxage=31536000, immutable";
