@@ -298,16 +298,6 @@ export function bookShortUrl(pathname: string): string | null {
 }
 
 /**
- * Paths master serves dynamically -- its Apache reverse-proxies them to the
- * webstats service -- so R2 has nothing to answer with. Passed through to
- * master until generated stats files replace them in M2 (issue #16; ADR 0004,
- * bioc-registry#26). Trailing slash required: bare /packages/stats is a
- * package short URL on master (302 -> /about/removed-packages/), and
- * packageRedirect already reproduces that.
- */
-export const PASSTHROUGH_ORIGIN = "https://master.bioconductor.org";
-
-/**
  * True when a slashless request was answered by a directory index. Apache
  * redirects /checkResults to /checkResults/ before serving the index
  * (DirectorySlash); serving it in place instead makes every relative href
@@ -317,7 +307,15 @@ export function needsSlash(path: string, key: string | null): boolean {
   return !!key && key.endsWith("index.html") && !path.endsWith("/") && !path.endsWith("index.html");
 }
 
-export function passthrough(path: string): boolean {
+/**
+ * The download-stats tree, which bioc-traffic generates and uploads to R2
+ * (bioc-traffic#28). Answered from R2 alone: a miss is a 404, never the
+ * redirect table or the edge cache. master used to answer it from its private
+ * webstats host (issue #16). Trailing slash required: bare /packages/stats is a
+ * package short URL on master (302 -> /about/removed-packages/), and
+ * packageRedirect already reproduces that.
+ */
+export function isStatsPath(path: string): boolean {
   return path.startsWith("/packages/stats/");
 }
 
@@ -347,7 +345,7 @@ export function statsNeedsSlash(path: string): boolean {
  * /packages/stats/index.html and bioc/index.html). The category listings are
  * /packages/stats/<cat>.html as-is, except bioc.html, which on master is the
  * same page as index.html. Directory paths without the slash are
- * statsNeedsSlash(). A miss on any key falls back to master via passthrough().
+ * statsNeedsSlash(). A miss on any key is a 404 (isStatsPath()).
  */
 export function statsKey(path: string): string | null {
   if (!path.startsWith("/packages/stats/")) return null;
