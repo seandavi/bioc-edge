@@ -1,81 +1,39 @@
-# Entry points for the bioconductor.org rebuild.
-#
-# Two halves, one seam:
-#   ./bioc.py <cmd>   pipeline -- fetches from primary sources into astro/data/
-#   astro             renderer -- turns astro/data/ into a static site
-#
-# The recipes here are only shortcuts. Anything with real logic lives in
-# pipeline/ (Python) or astro/src/ (Astro), never in this file.
-
-set positional-arguments
-
-releases := "3.23,3.24"
-port     := "4321"
+# Entry points for bioc-edge. The recipes are only shortcuts; the logic lives
+# in the scripts they call. sync.sh is not here: it runs from systemd
+# (systemd/bioc-sync.service) and touches production R2.
 
 # List the recipes.
 default:
     @just --list
 
-# --- data -------------------------------------------------------------------
+# Everything CI runs (.github/workflows/test.yml).
+test:
+    cd worker && npm run typecheck
+    node --test worker/test.ts
+    node --test worker/test-release-roll.ts
+    ./test-itemize.sh
+    ./test-cf-purge.sh
+    ./test-parity.sh
+    ./test-cutover-diff.sh
+    ./test-gen-manifest.sh
+    for f in *.sh inventory/*.sh; do bash -n "$f"; done
 
-# Fetch everything from primary sources: site repo, assets, prose, packages, tree.
-data releases=releases:
-    ./bioc.py all --bioc {{releases}}
-
-# Clone or update Bioconductor/bioconductor.org into .cache/.
-fetch-site:
-    ./bioc.py fetch-site
-
-# Prose pages from the site's git repo -> astro/data/site/.
-data-content:
-    ./bioc.py content
-
-# Static assets from the site's git repo -> astro/public/.
-data-assets:
-    ./bioc.py assets
-
-# packages.json for one release, from r-universe + tarball DESCRIPTION.
-data-packages bioc="3.23":
-    ./bioc.py packages --bioc {{bioc}}
-
-# tree.json for one release, from the biocViews vocabulary.
-data-tree bioc="3.23":
-    ./bioc.py tree --bioc {{bioc}}
-
-# --- site -------------------------------------------------------------------
-
-# Dev server, bound to all interfaces so it is reachable over the tailnet.
-dev:
-    cd astro && npm run dev
-
-# Full static build -> astro/dist/.
-build:
-    cd astro && npm run build
-
-# Serve the built dist/.
-preview:
-    cd astro && npm run preview
-
-# Install Astro's dependencies.
-install:
-    cd astro && npm install
-
-# --- checks -----------------------------------------------------------------
-
-# How much of the real site does the build reproduce?
-coverage:
-    ./bioc.py coverage
-
-# Diff the built site against bioconductor.org before any cutover.
-cutover-diff:
-    ./cutover-diff.sh
-
-# --- deploy -----------------------------------------------------------------
-
-# Push astro/dist to R2 and purge what changed. DRY_RUN=1 to rehearse.
-sync:
-    ./sync.sh
+# Regenerate worker/src/redirects.json from a captured legacy .htaccess.
+redirects htaccess="inventory/htaccess-20260730.conf":
+    node worker/gen-redirects.ts {{htaccess}} > worker/src/redirects.json
 
 # Deploy the Worker.
 deploy-worker:
     cd worker && npx wrangler deploy
+
+# Does bioconductor.org answer like master.bioconductor.org?
+parity:
+    ./parity.sh
+
+# Diff bioc-dev against bioconductor.org for every crawled URL.
+cutover-diff:
+    ./cutover-diff.sh
+
+# Publish the mirror manifest. DRY_RUN=1 to write locally only.
+gen-manifest:
+    ./gen-manifest.sh
