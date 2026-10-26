@@ -54,6 +54,9 @@ PURGE_MAX=${PURGE_MAX:-10000}
 : "${CLOUDFLARE_API_TOKEN:?run: ./make-env.sh && set -a && . ./.env && set +a}"
 
 log=sync-$(date +%Y%m%dT%H%M%S).log
+# Two weeks of per-run logs is plenty to investigate a failure; the journal
+# keeps the unit's stdout regardless. Hourly runs otherwise pile up ~30 MiB/day.
+find . -maxdepth 1 -name 'sync-*.log*' -mtime +14 -delete
 
 # Reconciliation. RSYNC_SRC mode trusts rsync's delta and never looks at the
 # bucket, so a failed upload or a hand-edited object diverges silently and
