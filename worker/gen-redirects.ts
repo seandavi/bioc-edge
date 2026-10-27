@@ -97,6 +97,13 @@ const overrideExact: Record<string, string> = {
   "/developers/how-to/git-mirror/": "/about/mirrors/mirror-how-to.html",
 };
 const overridePrefix: Prefix[] = [];
+// Upstream targets that rotted after the snapshot, swapped for their
+// successors (issue #3). Keyed by the httpsified target.
+const RETARGET: Record<string, string> = {
+  // The contributions book folded long tests into advanced-build-options.
+  "https://contributions.bioconductor.org/long-tests.html":
+    "https://contributions.bioconductor.org/advanced-build-options.html#long-tests",
+};
 {
   // RedirectMatch's `(3.[0-9][0-9])` requires exactly two digits after
   // "3." -- it does not match single-digit minors (3.0-3.9). That looks
@@ -163,6 +170,7 @@ for (const raw of lines) {
   }
 
   target = httpsify(target);
+  target = RETARGET[target] ?? target;
 
   const hasCapture = /\(\.\*\)/.test(pattern);
   const hasWildcard = hasCapture || /\.\*/.test(pattern);

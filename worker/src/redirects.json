@@ -355,7 +355,7 @@
     },
     {
       "from": "/developers/how-to/long-tests",
-      "to": "https://contributions.bioconductor.org/long-tests.html",
+      "to": "https://contributions.bioconductor.org/advanced-build-options.html#long-tests",
       "keepSuffix": false
     },
     {

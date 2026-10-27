@@ -14,6 +14,8 @@ import {
   listablePrefix,
   packageShortUrl,
   packageShortUrlTarget,
+  packageVignetteTarget,
+  htmlDirTarget,
   isStatsPath,
   statsKey,
   statsNeedsSlash,
@@ -378,6 +380,46 @@ test("explicit-version package short URLs probe only that version", async () => 
   assert.equal(await target("/packages/devel/BenchHub", release), "/about/removed-packages/");
   assert.equal(await target("/packages/devel/BenchHub", devel, release), "/packages/devel/bioc/html/BenchHub.html");
   assert.equal(await target("/packages/3.23/BenchHub", devel, release), "/packages/3.23/bioc/html/BenchHub.html");
+});
+
+test("vignette short URLs redirect to inst/doc only when the file exists (bioc-website#29)", async () => {
+  // Measured on master, 2026-10-27.
+  const target = (path: string, ...has: string[]) =>
+    packageVignetteTarget(path, LINKS, async (key) => has.includes(key));
+  const bc = "packages/3.24/bioc/vignettes/BiocCheck/inst/doc/BiocCheck.html";
+  assert.equal(
+    await target("/packages/3.24/BiocCheck/vignettes/BiocCheck.html", bc),
+    "/packages/3.24/bioc/vignettes/BiocCheck/inst/doc/BiocCheck.html",
+  );
+  // Literal devel kept; bare falls back from release to devel.
+  assert.equal(
+    await target("/packages/devel/BiocCheck/vignettes/BiocCheck.html", bc),
+    "/packages/devel/bioc/vignettes/BiocCheck/inst/doc/BiocCheck.html",
+  );
+  assert.equal(
+    await target("/packages/BiocCheck/vignettes/BiocCheck.html", bc),
+    "/packages/devel/bioc/vignettes/BiocCheck/inst/doc/BiocCheck.html",
+  );
+  assert.equal(
+    await target("/packages/3.23/affydata/vignettes/affydata.pdf", "packages/3.23/data/experiment/vignettes/affydata/inst/doc/affydata.pdf"),
+    "/packages/3.23/data/experiment/vignettes/affydata/inst/doc/affydata.pdf",
+  );
+  // Misses are plain 404s (null), never removed-packages.
+  assert.equal(await target("/packages/3.24/BiocCheck/vignettes/NoSuch.html", bc), null);
+  assert.equal(await target("/packages/release/BiocCheck/vignettes/BiocCheck.html", bc), null);
+  // Not this shape.
+  for (const p of ["/packages/3.24/BiocCheck/vignettes/", "/packages/3.24/BiocCheck/vignettes/a/b.html", "/packages/3.24/BiocCheck/man/x.pdf", "/packages/3.24/bioc/html/BiocCheck.html"])
+    assert.equal(await target(p, bc), null);
+});
+
+test("x.html that is a directory on master redirects to x/ (issue #3)", () => {
+  assert.deepEqual(htmlDirTarget("/about/mirrors/mirror-how-to.html"), {
+    key: "about/mirrors/mirror-how-to/index.html",
+    location: "/about/mirrors/mirror-how-to/",
+  });
+  assert.equal(htmlDirTarget("/about/mirrors/"), null);
+  assert.equal(htmlDirTarget("/about/mirrors/.html"), null);
+  assert.equal(htmlDirTarget("/packages/release/bioc/src/contrib/PACKAGES"), null);
 });
 
 test("stats paths are answered from R2 alone; bare /packages/stats is not one", () => {

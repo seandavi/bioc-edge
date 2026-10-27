@@ -11,6 +11,8 @@ import {
   accessRecord,
   listablePrefix,
   packageShortUrlTarget,
+  packageVignetteTarget,
+  htmlDirTarget,
   isStatsPath,
   statsKey,
   statsNeedsSlash,
@@ -299,7 +301,8 @@ export default {
       const listed = await listing(env, keys);
       if (listed) ({ res, key } = listed);
       else {
-        const redir = await packageRedirect(env, path, await symlinks(env));
+        const links = await symlinks(env);
+        const redir = (await packageRedirect(env, path, links)) ?? (await htmlDirRedirect(env, path, links));
         if (redir) {
           log(env, ctx, req, 302, "REDIRECT", null, t0);
           return redir;
@@ -467,8 +470,17 @@ async function listing(env: Env, keys: string[]): Promise<{ res: Response; key: 
  * emits.
  */
 async function packageRedirect(env: Env, path: string, links: Links): Promise<Response | null> {
-  const to = await packageShortUrlTarget(path, links, async (key) => !!(await env.BUCKET.head(key)));
+  const exists = async (key: string) => !!(await env.BUCKET.head(key));
+  const to =
+    (await packageVignetteTarget(path, links, exists)) ?? (await packageShortUrlTarget(path, links, exists));
   return to ? found(to) : null;
+}
+
+/** x.html missing but x/ a directory: 301 to x/, like master (htmlDirTarget). */
+async function htmlDirRedirect(env: Env, path: string, links: Links): Promise<Response | null> {
+  const t = htmlDirTarget(path);
+  if (!t || !(await env.BUCKET.head(resolveLinks(t.key, links)))) return null;
+  return new Response(null, { status: 301, headers: { location: t.location, "cache-control": "public, max-age=3600" } });
 }
 
 /** books/.htaccess: release first, then devel; no match falls through to a 404. */
