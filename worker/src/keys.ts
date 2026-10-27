@@ -285,6 +285,55 @@ export async function packageShortUrlTarget(
 }
 
 /**
+ * Vignette short URLs, the other half of master's package rewrite (also not
+ * in the captured .htaccess). Measured on master, 2026-10-27:
+ *
+ *   /packages/3.24/BiocCheck/vignettes/BiocCheck.html
+ *     302 -> /packages/3.24/bioc/vignettes/BiocCheck/inst/doc/BiocCheck.html
+ *   /packages/BenchHub/vignettes/v01_intro_trio.html   (devel-only)
+ *     302 -> /packages/devel/bioc/vignettes/BenchHub/inst/doc/v01_intro_trio.html
+ *   /packages/3.24/affydata/vignettes/affydata.pdf -> .../data/experiment/...
+ *   missing file, missing package, subdirectories, /man/, /inst/doc/  404
+ *
+ * Same version probing as packageShortUrlTarget, but master checks the file
+ * itself and a miss is a plain 404, not removed-packages: so null on a miss.
+ * The contributions book links this form (bioc-website#29).
+ */
+const VIGNETTE_URL = /^packages\/(?:(\d+\.\d+|release|devel)\/)?([A-Za-z][A-Za-z0-9.]*)\/vignettes\/([^/]+)$/;
+
+export async function packageVignetteTarget(
+  pathname: string,
+  links: Links,
+  exists: (key: string) => Promise<boolean>,
+): Promise<string | null> {
+  const m = VIGNETTE_URL.exec(pathname.replace(/^\/+/, ""));
+  if (!m) return null;
+  const [, ver, pkg, file] = m;
+  for (const v of ver ? [ver] : ["release", "devel"]) {
+    for (const repo of PKG_REPOS) {
+      const target = `packages/${v}/${repo}/vignettes/${pkg}/inst/doc/${file}`;
+      if (await exists(resolveLinks(target, links))) return `/${target}`;
+    }
+  }
+  return null;
+}
+
+/**
+ * master's "x.html is not a file but x/ is a directory" rule (the
+ * `RewriteRule ^.*$ %1/ [R=301]` gen-redirects.ts skips): measured
+ * 2026-10-27, master /about/mirrors/mirror-how-to.html 301 ->
+ * /about/mirrors/mirror-how-to/. candidates() maps x.html only to itself, so
+ * without this every legacy .html link to a page that became a directory
+ * 404s -- including redirect targets copied from .htaccess (issue #3). The
+ * key to probe after a miss, and where to send the client; null when the
+ * path is not *.html.
+ */
+export function htmlDirTarget(pathname: string): { key: string; location: string } | null {
+  const m = /^\/*(.+)\.html$/.exec(pathname);
+  return m && !m[1].endsWith("/") ? { key: `${m[1]}/index.html`, location: `/${m[1]}/` } : null;
+}
+
+/**
  * Book short URLs, from books/.htaccess (served from R2 as a plain object,
  * so none of its rules ran): /books/OMA -> /books/release/OMA/ when the
  * release build has it, else /books/devel/OMA/. Version and alias directories
